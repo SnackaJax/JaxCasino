@@ -367,7 +367,8 @@ function layout(st = T) {
   const n = st.max;
   const plateH = platesHeight();
   let cw = clamp(Math.min(w / Math.min(n * 2.05 + 1.6, 5.2), h / 5.6), 22, 74);
-  for (let pass = 0; pass < 14; pass++) {
+  let best = null;
+  for (let pass = 0; pass < 30; pass++) {
     const rail = clamp(cw * 0.26, 8, 18);
     const sw = clamp(cw * 2.1, w < 420 ? 62 : 78, 150);
     const R = cw * 0.52;
@@ -385,27 +386,49 @@ function layout(st = T) {
     let a0 = Math.max(0.3, Math.asin(clamp(need / Math.max(1, ry), 0, 1)));
     // on a narrow table the end seats come up beside the dealer: keep their cards below the shoe and the tray
     if (n > 1 && rx * Math.cos(a0) - sw / 2 < cw * 3.2) a0 = Math.max(a0, Math.asin(clamp((need + cw * 1.75) / Math.max(1, ry), 0, 1)));
-    const seats = [];
-    for (let i = 0; i < n; i++) {
-      const a = n === 1 ? Math.PI / 2 : a0 + (i * (Math.PI - 2 * a0)) / (n - 1);
-      seats.push([cx + rx * Math.cos(a), ry * Math.sin(a)]);
-    }
+    // The seats go round the curve of the table, evenly spread by angle. On a tall, narrow table (a phone held
+    // upright) that crowds the seats at the bottom, so they're then spread evenly along the curve itself instead,
+    // which runs them up the long sides.
+    const point = (a) => [cx + rx * Math.cos(a), ry * Math.sin(a)];
+    const byAngle = () => Array.from({ length: n }, (_, i) => point(n === 1 ? Math.PI / 2 : a0 + (i * (Math.PI - 2 * a0)) / (n - 1)));
+    const byLength = () => {
+      if (n === 1) return [point(Math.PI / 2)];
+      const steps = 240, along = [0];
+      let prev = point(a0);
+      for (let k = 1; k <= steps; k++) {
+        const p = point(a0 + (k * (Math.PI - 2 * a0)) / steps);
+        along.push(along[k - 1] + Math.hypot(p[0] - prev[0], p[1] - prev[1]));
+        prev = p;
+      }
+      const total = along[steps];
+      return Array.from({ length: n }, (_, i) => {
+        const want = (i * total) / (n - 1);
+        let k = 0;
+        while (k < steps && along[k + 1] < want) k++;
+        const f = along[k + 1] > along[k] ? (want - along[k]) / (along[k + 1] - along[k]) : 0;
+        return point(a0 + ((k + Math.min(1, f)) * (Math.PI - 2 * a0)) / steps);
+      });
+    };
     // neighbouring seats (cards, circle and plate) must not overlap: side by side, or one above the other on a
-    // tall table (a phone held upright)
-    let clash = false;
-    for (let i = 1; i < n; i++) {
-      const [x0, y0] = seats[i - 1], [x1, y1] = seats[i];
+    // tall table
+    const clashes = (seats) => seats.some((p, i) => {
+      if (!i) return false;
+      const [x0, y0] = seats[i - 1], [x1, y1] = p;
       const apartX = Math.abs(x1 - x0) >= sw + 4;
       const apartY = y1 >= y0 ? y1 - need >= y0 + R + 8 + plateH : y0 - need >= y1 + R + 8 + plateH;
-      if (!apartX && !apartY) clash = true;
-    }
+      return !apartX && !apartY;
+    });
     const midTop = ry - need;
-    const fits = !clash && midTop >= dealerBottom + 8;
-    if (!fits && cw > 22.5) { cw = Math.max(22, cw * 0.92); continue; }
-    Object.assign(G, { w, h, cw, R, sw, rail, cx, frx, feltL, feltH, dealerY, dealerBottom, rise, seats, midTop, plateH,
-      chip: Math.round(clamp(R * 0.95, 14, 40)), compact: sw < 112 });
+    let seats = byAngle();
+    if (clashes(seats)) seats = byLength();
+    const fits = !clashes(seats) && midTop >= dealerBottom + 8;
+    best = { w, h, cw, R, sw, rail, cx, frx, feltL, feltH, dealerY, dealerBottom, rise, seats, midTop, plateH,
+      chip: Math.round(clamp(R * 0.95, 14, 40)), compact: sw < 112 };
+    if (!fits && cw > 22.5) { cw = Math.max(22, cw * 0.94); continue; }
     break;
   }
+  // the layout that fits (or, on a screen too small for everything, the last and smallest try)
+  Object.assign(G, best);
   const { cx, frx, feltL, feltH, rail, R, sw } = G;
   cw = G.cw;
   area.style.setProperty('--card-w', `${cw.toFixed(1)}px`);

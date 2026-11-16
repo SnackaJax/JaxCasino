@@ -37,29 +37,78 @@ on the local test server (`python -m activity.devserver`), so the players are te
    Open the generated URL to invite the bot to your server.
 5. For timeouts and nickname changes, drag the bot's role above the roles of the members it should be able to affect (Server Settings → Roles). Discord never lets a bot time out administrators or rename the server owner.
 
-### 2. Configure
+### 2. Download and configure
+Download the latest release from the [Releases page](../../releases) and unpack it, or clone the repository:
 ```bash
-copy .env.example .env
+git clone https://github.com/SnackaJax/JaxCasino.git
+```
+```bash
+cd JaxCasino
+```
+Copy the example settings (on Windows: `copy .env.example .env`):
+```bash
+cp .env.example .env
 ```
 Edit `.env`:
 - `DISCORD_TOKEN`: the bot token.
 - `GUILD_ID`: your server ID (right-click the server → Copy Server ID; turn on Developer Mode in Discord settings first). With this set, slash commands appear instantly.
 - `ADMIN_ROLE_IDS` / `ADMIN_USER_IDS`: who can use admin commands. The server owner is always an admin.
 - `GAMBLING_CHANNEL_IDS`: the channel(s) where games are allowed. You can also set these from Discord with `/config channel-add`.
+- `DISCORD_CLIENT_SECRET`: only needed for the Activity (the casino in voice calls), see [step 4](#4-optional-the-activity-casino).
 - `LOG_LEVEL` (optional): how much the console shows: `INFO` (default) or `DEBUG` for everything.
 
-### 3. Install and run
+Never share or commit `.env`: anyone with the bot token can take over the bot.
+
+### 3a. Run it with Docker (recommended)
+You need [Docker](https://docs.docker.com/get-docker/) with Compose. From the bot's folder:
+```bash
+docker compose up -d --build
+```
+That builds the image and starts the bot in the background. It restarts by itself after a crash or reboot. Watch it start with:
+```bash
+docker compose logs -f gamblebot
+```
+Optional, the live blackjack dealer's voice (about 350 MB; without it the dealer only talks on devices with their own speech voices, which Android's Discord app doesn't have):
+```bash
+docker compose run --rm gamblebot python download_voices.py
+```
+```bash
+docker compose restart gamblebot
+```
+What goes where:
+- The database (`gamble.db`) and the log files are kept in the `gamblebot-data` volume, and the voice models in `gamblebot-voices`, so they survive rebuilds and updates.
+- `docker-compose.yml` sets `DATABASE_PATH`, `LOG_DIR` and `ACTIVITY_HOST` itself, so leave those as they are in `.env`.
+- The Activity's web server is published on `127.0.0.1:8765`: reachable from this machine only, for your tunnel or reverse proxy.
+
+**Updating:** download the new release (or `git pull`), then `docker compose up -d --build`. Your database is kept.
+
+**Backups:** copy the database out of the volume while the bot runs (SQLite in WAL mode, so stop the bot first for a fully consistent copy):
+```bash
+docker compose cp gamblebot:/data/gamble.db ./gamble-backup.db
+```
+
+### 3b. Or run it with Python
+You need Python 3.13 (the version the Docker image uses).
 ```bash
 pip install -r requirements.txt
 ```
 ```bash
 python download_voices.py
 ```
-(the blackjack dealer's voice, about 350 MB; the bot runs without it, the dealer just doesn't talk on Android)
+(optional: the blackjack dealer's voice, about 350 MB)
 ```bash
 python bot.py
 ```
-To run it in Docker instead, see `docker-compose.example.yml`.
+On Windows, `startbot.bat` does the last step. The database (`gamble.db`) and `logs/` are created in the bot's folder.
+
+### 4. (Optional) The Activity: casino
+The Activity is the casino that opens inside Discord voice calls (the screenshots above). It needs a public HTTPS address for the bot's web server; the full steps are under [Spin Frenzy → Setup](#spin-frenzy). In short:
+1. Developer Portal → your application → **OAuth2**: put the **Client Secret** in `.env` as `DISCORD_CLIENT_SECRET`, and add any redirect URL (for example `https://127.0.0.1`).
+2. Give the web server (port 8765) a public HTTPS address. With Docker the easiest way is the built-in Cloudflare quick tunnel: `docker compose --profile tunnel up -d`, then find the address with `docker compose logs tunnel`. That address changes every time the tunnel restarts; use a named [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) or your own reverse proxy for a permanent one.
+3. Developer Portal → **Activities → URL Mappings**: set `/` to that address (without `https://`), and turn on **Activities → Settings → Enable Activities**.
+4. Restart the bot and use `/casino` in a server.
+
+If you don't want the Activity at all, set `ACTIVITY_ENABLED=0` in `.env`.
 
 ## Commands
 
@@ -157,7 +206,7 @@ Bets are held in escrow like every other game (refunded if the bot restarts mid-
 
 **Setup** (one time):
 1. In the [Developer Portal](https://discord.com/developers/applications), open the bot's application → **OAuth2**: copy the **Client Secret** into `.env` as `DISCORD_CLIENT_SECRET`, and add any redirect URL (for example `https://127.0.0.1`); Discord requires one even though Activities don't use it.
-2. The bot runs the Activity's web server on `ACTIVITY_HOST:ACTIVITY_PORT` (default `127.0.0.1:8765`). Discord needs it over public HTTPS. The easiest way is a [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) on the same machine: `cloudflared tunnel --url http://localhost:8765` for a quick test (the URL changes each time), or a named tunnel for a permanent address. In Docker, set `ACTIVITY_HOST=0.0.0.0` and publish the port.
+2. The bot runs the Activity's web server on `ACTIVITY_HOST:ACTIVITY_PORT` (default `127.0.0.1:8765`). Discord needs it over public HTTPS. The easiest way is a [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) on the same machine: `cloudflared tunnel --url http://localhost:8765` for a quick test (the URL changes each time), or a named tunnel for a permanent address. In Docker, `docker compose --profile tunnel up -d` starts that quick tunnel next to the bot (see [step 4](#4-optional-the-activity-casino)).
 3. Portal → **Activities → URL Mappings**: set the root mapping `/` to your tunnel's host (without `https://`).
 4. Portal → **Activities → Settings**: turn on **Enable Activities**. Discord then adds a "Launch" command to the app. The bot's command sync keeps it.
 5. Restart the bot. In a voice channel, press the 🚀 Activities button and pick the bot, or use `/casino`.

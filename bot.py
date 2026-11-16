@@ -187,9 +187,14 @@ class GambleBot(commands.Bot):
 def main() -> None:
     if not config.TOKEN:
         print("DISCORD_TOKEN is missing. Copy .env.example to .env and fill it in.")
-        return
+        sys.exit(1)
     setup_logging()
-    GambleBot().run(config.TOKEN, log_handler=None)
+    try:
+        GambleBot().run(config.TOKEN, log_handler=None)
+    except discord.LoginFailure:
+        log.error("Discord didn't accept DISCORD_TOKEN. Copy the bot token again from the Developer Portal "
+                  "(Bot -> Reset Token) into .env.")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

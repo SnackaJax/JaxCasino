@@ -279,7 +279,8 @@ function iAmIn() { return !!(S && S.bonus && S.bonus.players.includes(myId)); }
 
 function avatarHtml(p, cls = '') {
   const initial = esc((p.name || '?').trim().charAt(0).toUpperCase() || '?');
-  if (p.avatar) return `<div class="avatar ${cls}"><img src="/avatar/${p.id}" alt="" onerror="this.replaceWith(document.createTextNode('${initial}'))"></div>`;
+  // the fallback letter is read from data-i, so a name starting with a quote can't break the onerror script
+  if (p.avatar) return `<div class="avatar ${cls}"><img src="/avatar/${p.id}" alt="" data-i="${initial}" onerror="this.replaceWith(document.createTextNode(this.dataset.i))"></div>`;
   return `<div class="avatar ${cls}">${initial}</div>`;
 }
 

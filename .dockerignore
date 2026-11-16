@@ -1,4 +1,15 @@
-# The image only needs requirements.txt. Everything else (tokens, databases, logs, code)
-# stays out of the image and is linked in at runtime by docker-compose.yml.
+# Only the bot's code goes into the image. Everything else stays out, above all .env (the bot token), the
+# databases, logs and the voice models (those live in volumes, see docker-compose.yml).
 *
+!bot.py
+!config.py
+!database.py
+!download_voices.py
 !requirements.txt
+!assets/
+!cogs/
+!utils/
+!activity/
+!voices/README.md
+**/__pycache__
+**/*.py[cod]

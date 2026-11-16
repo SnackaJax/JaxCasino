@@ -122,6 +122,13 @@ CREATE TABLE IF NOT EXISTS shop_jobs (
 """
 
 
+def _check_amount(amount: int) -> None:
+    """Debits and transfers only take amounts of 0 or more: a negative amount would quietly add credits instead.
+    Every caller already checks its input; this is a last line of defence."""
+    if not isinstance(amount, int) or isinstance(amount, bool) or amount < 0:
+        raise ValueError(f"invalid credit amount: {amount!r}")
+
+
 class Database:
     def __init__(self, path: str):
         self.path = path
@@ -324,6 +331,7 @@ class Database:
 
     async def try_debit(self, guild_id: int, user_id: int, amount: int) -> bool:
         """Atomically removes `amount` if the user can afford it."""
+        _check_amount(amount)
         async with self.lock:
             await self._ensure(guild_id, user_id)
             cur = await self.conn.execute(
@@ -334,6 +342,7 @@ class Database:
             return cur.rowcount == 1
 
     async def transfer(self, guild_id: int, from_id: int, to_id: int, amount: int) -> bool:
+        _check_amount(amount)
         async with self.lock:
             await self._ensure(guild_id, from_id)
             await self._ensure(guild_id, to_id)
@@ -450,6 +459,7 @@ class Database:
     # ------------------------------------------------------------------- shop
     async def spend(self, guild_id: int, user_id: int, amount: int, kind: str = "shop") -> bool:
         """Atomically removes `amount` for a purchase if the user can afford it, and logs it."""
+        _check_amount(amount)
         async with self.lock:
             await self._ensure(guild_id, user_id)
             cur = await self.conn.execute(

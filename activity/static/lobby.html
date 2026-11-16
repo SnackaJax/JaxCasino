@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>Games</title>
+  <style>
+    @font-face { font-family: "Manrope"; font-weight: 200 800; font-display: swap; src: url("/static/fonts/manrope-latin.woff2") format("woff2"); }
+    @font-face { font-family: "Cinzel"; font-weight: 400 900; font-display: swap; src: url("/static/fonts/cinzel-latin.woff2") format("woff2"); }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; overflow: hidden; color: #fbf3e4; font-family: "Manrope", "Segoe UI", system-ui, sans-serif;
+      background: radial-gradient(ellipse at 50% 20%, #3a1420, #0e060a 70%); -webkit-user-select: none; user-select: none;
+      /* No double-tap zoom. The games run in a frame inside this page, and on iPhones this outer page decides about
+         zooming (iOS ignores user-scalable=no), so quick taps in a game (Picnic Pick hampers) zoomed in without this. */
+      touch-action: manipulation; -webkit-tap-highlight-color: transparent; -webkit-text-size-adjust: 100%; }
+    button, #game { touch-action: manipulation; }
+    .wrap { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; padding: 16px;
+      padding-top: max(16px, env(safe-area-inset-top)); }
+    body.discord-mobile .wrap { padding-top: 64px; }
+    h1 { margin: 0; font-size: clamp(20px, 3.4vw, 32px); letter-spacing: 3px; color: #f6dd8a; text-shadow: 0 0 18px rgba(215, 170, 69, .5); }
+    .cards { display: flex; gap: clamp(12px, 3vw, 28px); flex-wrap: wrap; justify-content: center; }
+    .card { width: clamp(180px, 28vw, 320px); aspect-ratio: 4 / 3.4; border-radius: 20px; cursor: pointer; position: relative; overflow: hidden;
+      display: flex; flex-direction: column; align-items: center; justify-content: flex-end; padding: 16px; gap: 6px; border: 3px solid;
+      transition: transform .18s, box-shadow .18s; font: inherit; color: inherit; text-align: center; }
+    .card:hover, .card:focus-visible { transform: translateY(-4px) scale(1.02); outline: none; }
+    .card .art { position: absolute; inset: 0 0 34% 0; display: flex; align-items: center; justify-content: center; }
+    .card .name { font-weight: 800; font-size: clamp(20px, 2.6vw, 28px); letter-spacing: 1px; position: relative; }
+    .card .desc { font-size: 13px; opacity: .85; position: relative; }
+    .sf { background: radial-gradient(ellipse at 50% 30%, #6a1426, #2a0610); border-color: #d7aa45; }
+    .sf:hover { box-shadow: 0 0 30px rgba(215, 170, 69, .6); }
+    .sf .name { font-family: "Cinzel", Georgia, serif; font-weight: 900; color: #f6dd8a; }
+    .wheel { height: 84%; aspect-ratio: 1; border-radius: 50%; border: 6px solid #e8c063; animation: turn 9s linear infinite;
+      background: conic-gradient(#1f8a70 0 12.5%, #c2410c 0 25%, #2b4fb8 0 37.5%, #b3123b 0 50%, #d4a017 0 62.5%, #0f7a4a 0 75%, #1d6fa5 0 87.5%, #7b2fa0 0);
+      box-shadow: 0 0 24px rgba(232, 192, 99, .5), inset 0 0 0 4px rgba(0,0,0,.3); }
+    @keyframes turn { to { transform: rotate(360deg); } }
+    .bb { background: linear-gradient(180deg, #1a1030, #5e2414); border-color: #ff821e; }
+    .bb:hover { box-shadow: 0 0 30px rgba(255, 130, 30, .7); }
+    .bb .name { color: #ffc828; text-shadow: 0 2px 0 #7a160e; }
+    .bb .art img { height: 82%; filter: drop-shadow(0 6px 10px rgba(0,0,0,.6)); animation: bob 1.6s ease-in-out infinite; }
+    .bb .art img:nth-child(2) { height: 60%; margin-left: -12%; animation-delay: .4s; }
+    @keyframes bob { 50% { transform: translateY(-6px) rotate(-3deg); } }
+    .pk { background: radial-gradient(ellipse at 50% 30%, #17734a, #062e1d); border-color: #5a3418; }
+    .pk:hover { box-shadow: 0 0 30px rgba(227, 184, 79, .55); }
+    .pk .name { font-family: "Cinzel", Georgia, serif; font-weight: 900; color: #e3b84f; }
+    .mini-cards { position: relative; height: 70%; aspect-ratio: 1.2; }
+    .mini-cards span { position: absolute; top: 8%; width: 46%; height: 84%; border-radius: 8px; background: linear-gradient(160deg, #fff, #ece8dc);
+      color: #16181d; font-weight: 800; font-size: clamp(16px, 2.6vw, 26px); padding: 6px 8px; box-shadow: 0 6px 14px rgba(0,0,0,.5);
+      display: flex; flex-direction: column; animation: bob 1.8s ease-in-out infinite; }
+    .mini-cards span b { font-size: 1.6em; margin-top: auto; align-self: flex-end; }
+    .mini-cards span:first-child { left: 10%; transform: rotate(-10deg); }
+    .mini-cards span.r { right: 10%; color: #d63a3a; transform: rotate(10deg); animation-delay: .4s; }
+    .bj { background: radial-gradient(ellipse at 50% 30%, #2a82bd, #082a47); border-color: #3a2216; }
+    .bj:hover { box-shadow: 0 0 30px rgba(120, 190, 255, .55); }
+    .bj .name { font-family: "Cinzel", Georgia, serif; font-weight: 900; color: #e8bd57; }
+    .mini-cards .chip21 { position: absolute; right: -2%; bottom: 0; width: 34%; aspect-ratio: 1; border-radius: 50%; z-index: 2;
+      background: radial-gradient(circle, #1d1d1d 0 50%, transparent 51%), repeating-conic-gradient(#1d1d1d 0 22.5deg, #e8bd57 22.5deg 45deg);
+      box-shadow: 0 4px 10px rgba(0,0,0,.6); display: flex; align-items: center; justify-content: center; color: #e8bd57; font-weight: 900;
+      font-size: clamp(11px, 1.6vw, 17px); animation: bob 1.8s ease-in-out infinite; animation-delay: .8s; }
+    .rr { background: radial-gradient(ellipse at 50% 25%, #0f6f8f, #052238 75%); border-color: #4fe0d0; }
+    .rr:hover { box-shadow: 0 0 30px rgba(79, 224, 208, .6); }
+    .rr .name { color: #ffe08a; text-shadow: 0 2px 0 #0a3550, 0 0 14px rgba(79, 224, 208, .5); }
+    .mini-grid { height: 76%; aspect-ratio: 1; display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; padding: 6px;
+      border-radius: 12px; background: rgba(2, 20, 34, .55); border: 2px solid rgba(79, 224, 208, .45); }
+    .mini-grid i { border-radius: 50%; animation: bob 1.8s ease-in-out infinite; box-shadow: inset -3px -4px 0 rgba(0,0,0,.25), inset 3px 3px 0 rgba(255,255,255,.3); }
+    .mini-grid i:nth-child(3n) { animation-delay: .3s; } .mini-grid i:nth-child(4n+1) { animation-delay: .6s; }
+    .rh { background: radial-gradient(ellipse at 50% 25%, #2b3350, #0d0f1c 75%); border-color: #f2c14e; }
+    .rh:hover { box-shadow: 0 0 30px rgba(242, 193, 78, .6); }
+    .rh .name { color: #f2c14e; text-shadow: 0 2px 0 #3a2a08, 0 0 14px rgba(242, 193, 78, .45); }
+    .mini-vault { height: 76%; aspect-ratio: 1; display: grid; grid-template-columns: repeat(4, 1fr); gap: 3px; padding: 5px;
+      border-radius: 10px; background: #1a1d2c; border: 3px solid #8a8f9e; }
+    .mini-vault i { border-radius: 30%; animation: bob 1.8s ease-in-out infinite; box-shadow: inset -3px -4px 0 rgba(0,0,0,.25), inset 3px 3px 0 rgba(255,255,255,.3); }
+    .mini-vault i.w { border-radius: 2px; animation: none; background: repeating-linear-gradient(0deg, #8c4a2f 0 9px, #5a2c1a 9px 11px); }
+    .mini-vault i.m { border-radius: 50%; background: radial-gradient(circle at 40% 35%, #fff3b0, #f2c14e 55%, #a8770c); }
+    .mini-vault i:nth-child(3n) { animation-delay: .3s; } .mini-vault i:nth-child(4n+1) { animation-delay: .6s; }
+    .note { font-size: 13px; color: #d6b98a; text-align: center; max-width: 520px; min-height: 18px; }
+    .spinner { width: 40px; height: 40px; border-radius: 50%; border: 4px solid #6b4220; border-top-color: #f6dd8a; animation: turn 1s linear infinite; }
+    .hidden { display: none !important; }
+    #game { position: fixed; inset: 0; width: 100%; height: 100%; border: 0; background: #0e060a; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>PICK A GAME</h1>
+    <div class="spinner" id="spinner"></div>
+    <div class="cards hidden" id="cards">
+      <button class="card sf" data-go="/spinfrenzy">
+        <div class="art"><div class="wheel"></div></div>
+        <div class="name">Spin Frenzy</div>
+        <div class="desc">One shared wheel for the whole call · bonus rounds</div>
+      </button>
+      <button class="card bb" data-go="/bangerbash">
+        <div class="art"><img src="/static/banger/king.png" alt=""><img src="/static/banger/hotdog.png" alt=""></div>
+        <div class="name">Banger Bash</div>
+        <div class="desc">Your own barbecue slot · see everyone's big wins</div>
+      </button>
+      <button class="card rr hidden" data-go="/reefrush" id="reefCard">
+        <div class="art"><div class="mini-grid" aria-hidden="true">
+          <i style="background:#ff8a3d"></i><i style="background:#ff8a3d"></i><i style="background:#c06bff"></i><i style="background:#ffd23f"></i>
+          <i style="background:#ff8a3d"></i><i style="background:#4fe0d0"></i><i style="background:#c06bff"></i><i style="background:#ffd23f"></i>
+          <i style="background:#ff6fa8"></i><i style="background:#4fe0d0"></i><i style="background:#4fe0d0"></i><i style="background:#ffd23f"></i>
+          <i style="background:#ff6fa8"></i><i style="background:#6be675"></i><i style="background:#4fe0d0"></i><i style="background:#ffd23f"></i>
+        </div></div>
+        <div class="name">Reef Rush</div>
+        <div class="desc">7×7 cluster cascades · wake the Kraken</div>
+      </button>
+      <button class="card rh hidden" data-go="/raccoonheist" id="heistCard">
+        <div class="art"><div class="mini-vault" aria-hidden="true">
+          <i class="w"></i><i class="w"></i><i class="w"></i><i class="w"></i>
+          <i class="w"></i><i style="background:#ff5a6e"></i><i style="background:#58d68d"></i><i class="w"></i>
+          <i class="w"></i><i style="background:#b678ff"></i><i class="m"></i><i class="w"></i>
+          <i class="w"></i><i class="w"></i><i class="w"></i><i class="w"></i>
+        </div></div>
+        <div class="name">Raccoon Heist</div>
+        <div class="desc">Raid the vault · drill the walls · call the Boss</div>
+      </button>
+      <button class="card pk" data-go="/poker">
+        <div class="art"><div class="mini-cards"><span>A<b>♠</b></span><span class="r">K<b>♥</b></span></div></div>
+        <div class="name">Poker</div>
+        <div class="desc">Texas Hold'em tables · play the others in the server</div>
+      </button>
+      <button class="card bj" data-go="/blackjack">
+        <div class="art"><div class="mini-cards"><span>A<b>♠</b></span><span class="r">J<b>♦</b></span><i class="chip21">21</i></div></div>
+        <div class="name">Blackjack</div>
+        <div class="desc">Live tables · beat the dealer together</div>
+      </button>
+    </div>
+    <div class="note" id="note"></div>
+  </div>
+  <!-- The chosen game runs in this frame, so the Activity never leaves this page (see auth.js for why). -->
+  <iframe id="game" class="hidden" title="Game" allow="autoplay"></iframe>
+  <script type="module">
+    import { signIn, becomeShell } from '/static/auth.js';
+    const p = new URLSearchParams(location.search);
+    if (p.get('platform') === 'mobile' || p.get('mobile') === '1') document.body.classList.add('discord-mobile');
+    const note = document.getElementById('note');
+    const frame = document.getElementById('game');
+    const wrap = document.querySelector('.wrap');
+
+    function openGame(path) {
+      frame.src = path + location.search;
+      frame.classList.remove('hidden');
+      wrap.classList.add('hidden');
+      frame.focus();
+    }
+    function showMenu() {
+      frame.src = 'about:blank';   // closes the game's connection
+      frame.classList.add('hidden');
+      wrap.classList.remove('hidden');
+    }
+    becomeShell({ menu: showMenu });
+    for (const card of document.querySelectorAll('.card')) card.addEventListener('click', () => openGame(card.dataset.go));
+    // Sign in here, once; the games ask this page for the session.
+    signIn((text) => { note.textContent = text; }).then((auth) => {
+      document.getElementById('spinner').classList.add('hidden');
+      if (auth.error) { note.textContent = auth.error; return; }
+      note.textContent = '';
+      // games that are still being built stay hidden until the server switches them on
+      if ((auth.cfg && auth.cfg.games || []).includes('reefrush')) document.getElementById('reefCard').classList.remove('hidden');
+      if ((auth.cfg && auth.cfg.games || []).includes('raccoonheist')) document.getElementById('heistCard').classList.remove('hidden');
+      document.getElementById('cards').classList.remove('hidden');
+      // launched with a game's own command (/bangerbash)? then go straight to that game
+      fetch('/api/start-game', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session: auth.session }) })
+        .then((r) => r.json()).then((d) => { if (d.game) openGame(d.game); }).catch(() => {});
+    }).catch((e) => {
+      document.getElementById('spinner').classList.add('hidden');
+      note.textContent = `Couldn't sign in: ${e.message || e}`;
+    });
+  </script>
+</body>
+</html>

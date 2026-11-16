@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <title>Reef Rush</title>
+  <link rel="stylesheet" href="/static/reef.css">
+</head>
+<body>
+  <div id="app">
+    <header class="top">
+      <button class="icon-btn" id="gamesBtn" title="All games" aria-label="All games">☰</button>
+      <div class="logo"><span class="l1">REEF</span><span class="l2">RUSH</span></div>
+      <div class="top-right">
+        <button class="icon-btn" id="muteBtn" title="Sound on/off" aria-label="Sound on/off">🔊</button>
+        <button class="icon-btn" id="infoBtn" title="Paytable and rules" aria-label="Paytable and rules">?</button>
+        <div class="balance"><span class="coin-dot"></span><span id="balance">–</span></div>
+      </div>
+    </header>
+
+    <main class="main">
+      <section class="stage" id="stage">
+        <div class="bubbles-bg" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+        <div class="play" id="play">
+          <div class="meter" id="meter" aria-label="Tide Meter">
+            <div class="meter-track"><div class="meter-fill" id="meterFill"></div>
+              <div class="meter-mark surge" id="markSurge"><span>SURGE</span></div>
+              <div class="meter-mark kraken" id="markKraken"><span>KRAKEN</span></div>
+            </div>
+            <div class="meter-label"><span class="lbl">TIDE</span> <b id="meterNum">0</b></div>
+          </div>
+          <div class="board-frame" id="boardFrame"><canvas id="board"></canvas></div>
+        </div>
+        <div class="win-bar" id="winBar"><span id="winText">Dive in!</span></div>
+
+        <div class="banner hidden" id="banner"><div class="banner-main" id="bannerMain"></div><div class="banner-sub" id="bannerSub"></div></div>
+        <div class="bigwin hidden" id="bigwin"><div class="bw-title" id="bwTitle"></div><div class="bw-amount" id="bwAmount"></div><div class="bw-skip">tap to skip</div></div>
+        <canvas id="fx"></canvas>
+        <div class="feed-pop" id="feedPop"></div>
+        <div class="toast hidden" id="toast"></div>
+        <div class="overlay" id="loading"><div class="spinner"></div><div id="loadingText">Connecting…</div></div>
+      </section>
+
+      <aside class="side">
+        <div class="side-title">On the reef <span id="playerCount"></span></div>
+        <div class="players" id="players"></div>
+        <div class="side-title">Big wins</div>
+        <div class="feed" id="feed"><div class="feed-empty">Nothing yet. Be the first!</div></div>
+      </aside>
+    </main>
+
+    <footer class="controls">
+      <div class="broke hidden" id="broke">
+        <div class="broke-text"><b>You're out of credits.</b> <span id="brokeText"></span></div>
+        <button class="btn btn-restart" id="restartBtn">Restart</button>
+      </div>
+      <div class="bet-box">
+        <button class="round-btn" id="betDown" aria-label="Lower bet">−</button>
+        <div class="bet-val"><div class="lbl">BET</div><div id="bet">100</div></div>
+        <button class="round-btn" id="betUp" aria-label="Raise bet">+</button>
+      </div>
+      <button class="spin-btn" id="spinBtn" aria-label="Spin"><span>SPIN</span></button>
+      <div class="right-box">
+        <div class="last-win"><div class="lbl">WIN</div><div id="lastWin">0</div></div>
+        <div class="toggles">
+          <button class="btn toggle" id="autoBtn" title="Keep spinning until you stop it">AUTO</button>
+          <button class="btn toggle" id="turboBtn" title="Faster animations">TURBO</button>
+        </div>
+      </div>
+    </footer>
+  </div>
+
+  <div class="modal hidden" id="infoModal">
+    <div class="modal-card">
+      <button class="icon-btn modal-close" id="infoClose" aria-label="Close">✕</button>
+      <h2>Reef Rush</h2>
+      <div id="infoBody"></div>
+    </div>
+  </div>
+
+  <script type="module" src="/static/reef.js"></script>
+</body>
+</html>

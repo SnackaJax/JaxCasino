@@ -1,0 +1,365 @@
+/* Layout and behaviour. Colors, fonts and radii come from theme.css; restyle there.
+   Layouts (by window size):
+     wide            stage + players panel on the right, board below
+     <= 860px wide   players become a strip under the stage
+     <= 640px wide   phone: board is 4 x 2, chips scroll sideways
+     <= 640px high   compact board (smaller tiles, no "pays" line)
+     short + wide    (landscape phone, short popout) board moves to a column beside the stage
+     tiny            (very small popout) watch only: stage + timer
+   Inside the stage, container queries size the Boost Reel and bonus scenes to the stage itself. */
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); overflow: hidden;
+  font-family: var(--font-ui); -webkit-user-select: none; user-select: none;
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent; -webkit-text-size-adjust: 100%; }
+button { font: inherit; color: inherit; }
+.hidden { display: none !important; }
+.display { font-family: var(--font-display); font-weight: var(--display-weight); font-style: var(--display-style); }
+
+#app {
+  display: grid; height: 100vh; height: 100dvh;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-areas: "top" "main" "board";
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  background: var(--bg-pattern, none), radial-gradient(ellipse at 50% 30%, var(--bg-glow) 0%, var(--bg) 70%);
+  background-color: var(--bg);
+}
+
+/* Discord's mobile app draws its own bar (server name, Leave button) over the top of the Activity */
+body.discord-mobile #app { padding-top: max(env(safe-area-inset-top), var(--discord-mobile-top)); }
+
+/* ------------------------------------------------------------------ header */
+.top { grid-area: top; display: flex; align-items: center; gap: 10px; padding: 6px 12px; min-width: 0;
+  background: rgba(0,0,0,.25); border-bottom: 1px solid var(--line); }
+.logo { font-family: var(--font-display); font-weight: var(--display-weight); font-style: var(--display-style);
+  letter-spacing: 1px; font-size: clamp(15px, 2.2vw, 20px); white-space: nowrap; }
+.logo-spin, .logo-frenzy { background: var(--logo-spin-fill); -webkit-background-clip: text; background-clip: text;
+  color: transparent; filter: drop-shadow(0 0 8px var(--logo-glow)); }
+.logo-frenzy { background-image: var(--logo-frenzy-fill); margin-left: 6px; }
+.history { display: flex; gap: 4px; overflow: hidden; flex: 1; min-width: 0; padding-top: 6px; }
+.hist { flex: none; min-width: 28px; height: 24px; padding: 0 6px; border-radius: 6px; display: flex; align-items: center;
+  justify-content: center; font-size: 11px; font-weight: 800; color: var(--hist-text); position: relative;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.18); }
+.hist .hb { position: absolute; top: -6px; right: -4px; background: #fff; color: #000; font-size: 9px; border-radius: 4px; padding: 0 3px; }
+.top-right { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.head-players { display: none; font-size: 13px; color: var(--muted); white-space: nowrap; }
+.balance { display: flex; align-items: center; gap: 6px; background: var(--panel); border: 1px solid var(--line);
+  padding: 4px 12px; border-radius: 99px; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.coin-dot { width: 14px; height: 14px; border-radius: 50%; flex: none;
+  background: radial-gradient(circle at 35% 35%, var(--coin-gold-light), var(--coin-gold)); }
+.icon-btn { width: 32px; height: 32px; flex: none; border-radius: 50%; border: 1px solid var(--line); background: var(--panel);
+  cursor: pointer; font-weight: 800; display: flex; align-items: center; justify-content: center; padding: 0; font-size: 14px; }
+
+/* ------------------------------------------------------------------ main area */
+.main { grid-area: main; display: grid; grid-template-columns: minmax(0, 1fr) clamp(170px, 19vw, 240px); min-height: 0; }
+.stage { position: relative; min-height: 0; min-width: 0; overflow: hidden; container: stage / size; }
+#canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.side { border-left: 1px solid var(--line); background: rgba(0,0,0,.2); padding: 10px; overflow-y: auto; min-height: 0; }
+.side-title { font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin: 4px 0 8px; }
+.players, .winners { display: flex; flex-direction: column; gap: 6px; }
+.player { display: flex; align-items: center; gap: 8px; padding: 6px; border-radius: var(--radius-small); background: var(--panel); min-width: 0; }
+.player.me { outline: 1px solid var(--accent2); }
+.player.offline { opacity: .5; }
+.avatar { width: 28px; height: 28px; border-radius: 50%; flex: none; background: var(--panel2); display: flex;
+  align-items: center; justify-content: center; font-size: 12px; font-weight: 800; overflow: hidden; }
+.avatar img { width: 100%; height: 100%; object-fit: cover; }
+.p-info { min-width: 0; flex: 1; }
+.p-name { font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.p-bets { font-size: 11px; color: var(--muted); display: flex; gap: 3px; flex-wrap: wrap; margin-top: 2px; }
+.p-bets i { font-style: normal; padding: 0 4px; border-radius: 4px; color: var(--hist-text); font-weight: 700; }
+.p-amt { font-size: 12px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.p-amt.win { color: var(--good); }
+.winner { display: flex; justify-content: space-between; gap: 6px; font-size: 13px; padding: 4px 6px; background: var(--panel); border-radius: 6px; }
+.winner span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.winner b { color: var(--good); }
+
+/* ------------------------------------------------------------------ Boost Reel (sized to the stage) */
+.boost { position: absolute; top: 8px; left: 50%; transform: translateX(-50%); z-index: 3; text-align: center;
+  background: linear-gradient(180deg, var(--boost-bg), var(--boost-bg-dark)); border: 2px solid var(--boost-border);
+  border-radius: 14px; padding: 3px 8px 7px;
+  box-shadow: 0 6px 24px rgba(0,0,0,.5), 0 0 18px color-mix(in srgb, var(--boost-border) 35%, transparent); }
+.boost-label { font-size: clamp(8px, 1.8cqmin, 10px); letter-spacing: 3px; color: var(--muted); font-weight: 800; }
+.boost-windows { display: flex; gap: 6px; margin-top: 3px; }
+.boost-win { width: clamp(64px, 17cqw, 116px); height: clamp(26px, 8cqh, 42px); border-radius: 8px; background: var(--boost-window);
+  border: 1px solid var(--boost-border); display: flex; align-items: center; justify-content: center; font-weight: 900;
+  font-size: clamp(11px, 3.4cqmin, 17px); overflow: hidden; white-space: nowrap; padding: 0 4px; }
+.boost-win.mult { width: clamp(44px, 10cqw, 72px); color: var(--boost-mult); font-size: clamp(13px, 4cqmin, 20px); }
+.boost.hit { animation: boostPulse 1s ease-in-out infinite; border-color: var(--boost-mult); }
+.boost.miss .boost-win { color: var(--muted); }
+@keyframes boostPulse { 50% { box-shadow: 0 0 30px color-mix(in srgb, var(--boost-mult) 80%, transparent); } }
+/* wide, short stage: reel goes to the top-right corner so the wheel can use the full height
+   (the top-left corner is kept for the winners feed) */
+@container stage (aspect-ratio > 1.45) {
+  .boost { left: auto; right: 10px; transform: none; }
+}
+
+/* ------------------------------------------------------------------ winners feed (top left) */
+.win-feed { position: absolute; left: 8px; top: var(--feed-top, 8px); width: min(230px, 46cqw); height: 0; z-index: 7;
+  pointer-events: none; }
+.feed-item { position: absolute; left: 0; top: 0; display: flex; align-items: center; gap: 7px; max-width: 100%;
+  padding: 4px 10px 4px 4px; border-radius: 99px; background: var(--feed-bg); border: 1px solid var(--feed-border);
+  box-shadow: 0 4px 14px rgba(0,0,0,.35); opacity: 0; animation: feedGlide 5.2s ease-in-out forwards; white-space: nowrap; }
+.feed-item .avatar { width: 24px; height: 24px; font-size: 11px; }
+.feed-name { color: var(--feed-name); font-weight: 700; font-size: 13px; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.feed-amount { color: var(--feed-amount); font-weight: 900; font-size: 13px; font-variant-numeric: tabular-nums; flex: none; }
+.feed-item.top { border-color: var(--feed-top-winner); box-shadow: 0 0 16px color-mix(in srgb, var(--feed-top-winner) 55%, transparent); }
+.feed-item.me .feed-name { color: var(--accent2); }
+@keyframes feedGlide {
+  0%   { opacity: 0; transform: translateY(-8px) scale(.92); }
+  12%  { opacity: 1; transform: translateY(0) scale(1); }
+  78%  { opacity: 1; }
+  100% { opacity: 0; transform: translateY(min(42cqh, 260px)); }
+}
+
+/* ------------------------------------------------------------------ bonus scenes */
+.bonus-head { position: absolute; top: 6px; left: 0; right: 0; text-align: center; z-index: 3; pointer-events: none; padding: 0 8px; }
+.bonus-title { font-family: var(--font-display); font-weight: var(--display-weight); font-style: var(--display-style);
+  font-size: clamp(16px, 6cqmin, 30px); letter-spacing: 1px; text-shadow: 0 0 16px currentColor; }
+.bonus-sub { font-size: clamp(11px, 2.6cqmin, 14px); color: var(--muted); margin-top: 2px; }
+.scene { position: absolute; top: var(--head-h, 64px); left: 8px; right: 8px; bottom: 8px;
+  display: flex; align-items: center; justify-content: center; z-index: 2; container: scene / size; }
+
+/* Coin Toss */
+.coin-row { --coin: clamp(60px, 34cqmin, 170px); display: flex; align-items: center; gap: clamp(10px, 5cqw, 50px); }
+@container scene (aspect-ratio < 1.1) { .coin-row { flex-direction: column; --coin: clamp(60px, 26cqmin, 150px); } }
+.coin-side { width: calc(var(--coin) * 1.05); padding: calc(var(--coin) * .08); border-radius: var(--radius); text-align: center;
+  background: var(--panel); border: 3px solid transparent; transition: transform .4s, opacity .4s, border-color .4s; }
+.coin-side.gold { border-color: color-mix(in srgb, var(--coin-gold) 70%, black); }
+.coin-side.silver { border-color: color-mix(in srgb, var(--coin-silver) 70%, black); }
+.coin-side.win { transform: scale(1.12); }
+.coin-side.gold.win { border-color: var(--coin-gold-text); box-shadow: 0 0 30px color-mix(in srgb, var(--coin-gold-text) 60%, transparent); }
+.coin-side.silver.win { border-color: var(--coin-silver-text); box-shadow: 0 0 30px color-mix(in srgb, var(--coin-silver-text) 60%, transparent); }
+.coin-side.lose { opacity: .35; }
+.cs-name { font-size: calc(var(--coin) * .09); letter-spacing: 2px; font-weight: 800; color: var(--muted); }
+.cs-val { font-size: calc(var(--coin) * .25); font-weight: 900; margin-top: 2px; font-variant-numeric: tabular-nums; }
+.gold .cs-val { color: var(--coin-gold-text); }
+.silver .cs-val { color: var(--coin-silver-text); }
+.coin-3d { perspective: 900px; }
+.coin { width: var(--coin); height: var(--coin); position: relative; transform-style: preserve-3d; }
+.coin.flipping { transition: transform 4.2s cubic-bezier(.15,.6,.25,1); }
+.coin-face { position: absolute; inset: 0; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  font-size: calc(var(--coin) * .42); backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+.coin-face.front { background: radial-gradient(circle at 35% 30%, var(--coin-gold-light), var(--coin-gold) 55%, color-mix(in srgb, var(--coin-gold) 60%, black));
+  color: color-mix(in srgb, var(--coin-gold) 45%, black); box-shadow: inset 0 0 0 calc(var(--coin) * .05) rgba(255,255,255,.25); }
+.coin-face.back { background: radial-gradient(circle at 35% 30%, var(--coin-silver-light), var(--coin-silver) 55%, color-mix(in srgb, var(--coin-silver) 50%, black));
+  color: color-mix(in srgb, var(--coin-silver) 40%, black); transform: rotateY(180deg); box-shadow: inset 0 0 0 calc(var(--coin) * .05) rgba(255,255,255,.35); }
+
+/* Treasure Grid (48 chests): fills the space below the title. 8 x 6 normally, 6 x 8 on tall stages, 12 x 4 on very
+   wide ones. Cells may be from 0.8 to 1.6 times as wide as they are tall, so the grid never gets too stretched. */
+.grid { --cols: 8; --rows: 6; display: grid; gap: clamp(3px, 1cqmin, 8px);
+  grid-template-columns: repeat(var(--cols), minmax(0, 1fr)); grid-template-rows: repeat(var(--rows), minmax(0, 1fr));
+  --w: min(100cqw, 100cqh * var(--cols) / var(--rows) * 1.6);
+  width: var(--w); height: min(100cqh, var(--w) * var(--rows) / var(--cols) / .8); }
+@container scene (aspect-ratio < 0.9) { .grid { --cols: 6; --rows: 8; } }
+@container scene (aspect-ratio > 2.3) { .grid { --cols: 12; --rows: 4; } }
+.cell { position: relative; perspective: 600px; cursor: default; container-type: size; min-width: 0; min-height: 0; }
+.cell-inner { position: absolute; inset: 0; transition: transform .5s; transform-style: preserve-3d; }
+.cell.down .cell-inner { transform: rotateY(180deg); }
+.cell-front, .cell-back { position: absolute; inset: 0; border-radius: var(--radius-small); display: flex; align-items: center;
+  justify-content: center; backface-visibility: hidden; -webkit-backface-visibility: hidden; font-weight: 900; }
+.cell-front { background: linear-gradient(160deg, var(--prize), var(--prize-dark)); border: 2px solid var(--prize-border); font-size: min(28cqw, 46cqh); }
+.cell-front.jackpot { background: linear-gradient(160deg, var(--coin-gold-light), var(--coin-gold)); color: #3b2600;
+  border-color: var(--coin-gold-text); box-shadow: 0 0 16px var(--coin-gold-text); }
+.cell-back { transform: rotateY(180deg); background: linear-gradient(160deg, var(--chest), var(--chest-dark));
+  border: 2px solid var(--chest-border); font-size: min(34cqw, 56cqh); }
+.cell.pickable { cursor: pointer; }
+.cell.mine .cell-front, .cell.mine .cell-back { border-color: var(--accent2); box-shadow: 0 0 18px color-mix(in srgb, var(--accent2) 80%, transparent); }
+.cell.shuffle { animation: shuffle .5s ease-in-out infinite; }
+.cell.dim { opacity: .45; }
+.cell-picks { position: absolute; bottom: -6px; left: 50%; transform: translateX(-50%); display: flex; gap: 1px; z-index: 2; }
+.cell-picks .avatar { width: 18px; height: 18px; font-size: 9px; border: 2px solid var(--bg); }
+@keyframes shuffle { 25% { transform: translate(3px, -4px) rotate(3deg); } 75% { transform: translate(-3px, 3px) rotate(-3deg); } }
+
+/* Frenzy Wheel pointer buttons */
+.pointer-pick { position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%); display: flex; gap: 8px; z-index: 4; }
+.ptr-btn { min-width: 84px; min-height: 44px; padding: 6px 14px; border-radius: var(--radius-small); border: 2px solid transparent;
+  font-weight: 800; cursor: pointer; color: #fff; }
+.ptr-btn.sel { border-color: #fff; box-shadow: 0 0 16px rgba(255,255,255,.6); }
+
+/* ------------------------------------------------------------------ banner / toast / overlays */
+.banner { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 6; text-align: center;
+  background: color-mix(in srgb, var(--bg) 88%, transparent); border: 2px solid var(--accent); border-radius: 18px;
+  padding: clamp(8px, 2.5cqmin, 16px) clamp(14px, 5cqmin, 30px); max-width: 92%;
+  box-shadow: 0 0 40px color-mix(in srgb, var(--accent) 45%, transparent); animation: pop .35s ease-out; pointer-events: none; }
+.banner-main { font-family: var(--font-display); font-weight: var(--display-weight); font-style: var(--display-style);
+  font-size: clamp(18px, 7cqmin, 34px); }
+.banner-sub { font-size: clamp(11px, 3cqmin, 16px); color: var(--muted); margin-top: 4px; }
+.banner.win { border-color: var(--good); box-shadow: 0 0 40px color-mix(in srgb, var(--good) 50%, transparent); }
+.banner.win .banner-main { color: var(--good); }
+.banner.low { top: auto; bottom: 10px; transform: translateX(-50%); animation-name: popLow; }
+.banner.low .banner-main { font-size: clamp(15px, 5cqmin, 24px); }
+@keyframes pop { from { transform: translate(-50%, -50%) scale(.6); opacity: 0; } }
+@keyframes popLow { from { transform: translateX(-50%) scale(.6); opacity: 0; } }
+.toast { position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); background: color-mix(in srgb, var(--bad) 20%, var(--bg));
+  border: 1px solid var(--bad); color: var(--text); padding: 8px 14px; border-radius: var(--radius-small); z-index: 8;
+  font-size: 14px; max-width: 92%; text-align: center; }
+.overlay { position: absolute; inset: 0; z-index: 20; background: var(--bg); display: flex; flex-direction: column; gap: 14px;
+  align-items: center; justify-content: center; color: var(--muted); text-align: center; padding: 20px; }
+.spinner { width: 42px; height: 42px; border-radius: 50%; border: 4px solid var(--line); border-top-color: var(--accent); animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ------------------------------------------------------------------ betting board */
+.board-wrap { grid-area: board; background: rgba(0,0,0,.35); border-top: 1px solid var(--line); padding: 8px 12px 10px; min-width: 0; }
+.broke { display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px;
+  padding: 8px 12px; border-radius: var(--radius); background: color-mix(in srgb, var(--bad) 16%, var(--panel));
+  border: 1px solid color-mix(in srgb, var(--bad) 60%, transparent); font-size: 14px; text-align: center; }
+.broke-text span { color: var(--muted); }
+.btn.btn-restart { background: var(--good); color: #062b18; border-color: transparent; font-weight: 900; }
+.toast.good { background: color-mix(in srgb, var(--good) 22%, var(--bg)); border-color: var(--good); }
+.tiny-note { display: none; text-align: center; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+.board-top { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+.timer { position: relative; flex: 1; min-width: 0; height: 22px; border-radius: 99px; background: var(--panel); overflow: hidden; }
+.timer-fill { position: absolute; inset: 0 auto 0 0; width: 0; background: linear-gradient(90deg, var(--accent2), var(--accent)); }
+.timer-text { position: relative; text-align: center; font-size: 12px; font-weight: 800; line-height: 22px; letter-spacing: 1px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 8px; }
+.board { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 6px; }
+.tile { position: relative; border-radius: var(--radius); padding: 8px 4px 6px; text-align: center; cursor: pointer; min-width: 0;
+  border: var(--tile-border); box-shadow: var(--tile-shadow); transition: transform .1s, filter .2s;
+  background: radial-gradient(circle at 50% 22%, color-mix(in srgb, var(--c) 82%, white 18%), color-mix(in srgb, var(--c) 58%, black 42%)); }
+.tile:active { transform: scale(.96); }
+.tile.locked { cursor: default; filter: saturate(.6) brightness(.8); }
+.tile.won { animation: tileWin .8s ease-in-out infinite; filter: none; }
+@keyframes tileWin { 50% { box-shadow: 0 0 26px var(--c); transform: translateY(-3px); } }
+.tile-label { font-family: var(--font-display); font-weight: var(--display-weight); font-size: clamp(16px, 2.4vw, 26px);
+  color: var(--tile-text); text-shadow: 0 2px 4px rgba(0,0,0,.45); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tile.bonus .tile-label { font-size: clamp(11px, 1.35vw, 15px); line-height: 1.15; white-space: normal; min-height: 2.3em;
+  display: flex; align-items: center; justify-content: center; }
+.tile-pay { font-size: 11px; color: color-mix(in srgb, var(--tile-text) 85%, transparent); }
+.tile-mine { margin-top: 4px; height: 22px; display: flex; align-items: center; justify-content: center; }
+.chip-stack { min-width: 34px; height: 22px; padding: 0 6px; border-radius: 99px; background: #fff; color: #111; font-size: 12px;
+  font-weight: 900; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 0 rgba(0,0,0,.35); }
+.tile-all { font-size: 10px; color: color-mix(in srgb, var(--tile-text) 75%, transparent); margin-top: 2px; min-height: 13px; white-space: nowrap; }
+.tile-boost { position: absolute; top: -10px; right: -6px; background: var(--boost-mult); color: #2b1b00; font-weight: 900; font-size: 13px;
+  padding: 1px 7px; border-radius: 99px; box-shadow: 0 0 12px var(--boost-mult); z-index: 2; }
+
+.controls { display: flex; align-items: center; gap: 10px; margin-top: 8px; flex-wrap: wrap; }
+.chips { display: flex; gap: 6px; min-width: 0; overflow-x: auto; padding: 6px 2px 2px; scrollbar-width: none; }
+.chips::-webkit-scrollbar { display: none; }
+.chip { --size: 44px; width: var(--size); height: var(--size); flex: none; border-radius: 50%; border: var(--chip-border);
+  box-shadow: inset 0 0 0 3px rgba(0,0,0,.25), inset 0 0 0 5px rgba(255,255,255,.35);
+  cursor: pointer; font-size: 12px; font-weight: 900; color: #fff; display: flex; align-items: center; justify-content: center;
+  text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: transform .1s; }
+.chip.sel { transform: translateY(-4px) scale(1.08); box-shadow: 0 0 0 3px #fff, 0 6px 14px rgba(0,0,0,.4); }
+.actions { display: flex; gap: 6px; }
+.btn { background: var(--panel2); border: 1px solid var(--line); border-radius: var(--radius-small); padding: 8px 14px; min-height: 38px;
+  cursor: pointer; font-weight: 700; }
+.btn:disabled { opacity: .4; cursor: default; }
+.btn.btn-auto.on { background: var(--accent2); color: #04212a; border-color: transparent; font-weight: 900;
+  box-shadow: 0 0 14px color-mix(in srgb, var(--accent2) 55%, transparent); }
+.my-total { flex: none; color: var(--muted); font-size: 14px; white-space: nowrap; }
+.my-total b { color: var(--text); font-variant-numeric: tabular-nums; }
+
+/* hover effects only on devices with a mouse (on phones they'd stick after a tap) */
+@media (hover: hover) {
+  .icon-btn:hover { background: var(--panel2); }
+  .tile:hover:not(.locked) { filter: brightness(1.12); }
+  .btn:hover:not(:disabled) { background: color-mix(in srgb, var(--panel2) 80%, white 8%); }
+  .cell.pickable:hover .cell-back { border-color: var(--boost-mult); filter: brightness(1.25); }
+}
+
+/* ------------------------------------------------------------------ modal */
+.modal { position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 50; display: flex; align-items: center; justify-content: center; padding: 12px; }
+.modal-card { position: relative; background: var(--bg2); border: 1px solid var(--line); border-radius: 16px; padding: 18px 20px;
+  max-width: 640px; width: 100%; max-height: 92dvh; overflow-y: auto; font-size: 14px; line-height: 1.5; user-select: text; }
+.modal-card h2 { margin: 0 36px 8px 0; font-size: 20px; }
+.modal-card h3 { margin: 14px 0 4px; font-size: 15px; }
+.modal-card p { margin: 4px 0; color: var(--text); opacity: .9; }
+.modal-card table { border-collapse: collapse; width: 100%; margin: 6px 0; }
+.modal-card td, .modal-card th { border-bottom: 1px solid var(--line); padding: 4px 6px; text-align: left; }
+.modal-close { position: absolute; top: 12px; right: 12px; }
+
+/* ================================================================== responsive layouts */
+
+/* medium: players become a strip under the stage */
+@media (max-width: 860px) {
+  .main { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
+  .side { border-left: 0; border-top: 1px solid var(--line); padding: 6px 10px; overflow: hidden; }
+  .side-title, .winners, .winners-title { display: none !important; }
+  .players { flex-direction: row; overflow-x: auto; scrollbar-width: none; }
+  .player { flex: none; max-width: 180px; padding: 4px 8px 4px 4px; }
+  .p-bets { display: none; }
+}
+
+/* phone portrait / narrow window */
+@media (max-width: 640px) {
+  .top { padding: 6px 10px 4px; gap: 8px; flex-wrap: wrap; row-gap: 2px; }
+  /* recent results get their own row under the logo and balance */
+  .history { order: 3; flex: 1 1 100%; padding-top: 6px; }
+  .hist { height: 20px; min-width: 24px; font-size: 10px; padding: 0 5px; }
+  .head-players { display: block; }
+  /* the players strip gets slimmer so the wheel keeps most of the screen */
+  .side { padding: 4px 8px; }
+  .player { max-width: 150px; padding: 2px 8px 2px 2px; gap: 6px; }
+  .player .avatar { width: 22px; height: 22px; font-size: 10px; }
+  .p-name { font-size: 12px; }
+  .p-amt { font-size: 11px; }
+  /* compact board so the wheel gets most of the screen */
+  .board-wrap { padding: 6px 8px 8px; }
+  .board-top { margin-bottom: 6px; gap: 8px; }
+  .timer { height: 20px; }
+  .timer-text { line-height: 20px; font-size: 11px; }
+  .my-total { font-size: 12px; }
+  .board { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; }
+  .tile { padding: 4px 3px 3px; border-radius: 10px; }
+  .tile-pay { display: none; }
+  .tile-label { font-size: clamp(17px, 5.4vw, 22px); line-height: 1.1; }
+  .tile.bonus .tile-label { font-size: clamp(10px, 3.1vw, 13px); line-height: 1.1; min-height: 2.2em; }
+  .tile-mine { height: 18px; margin-top: 2px; }
+  .chip-stack { height: 18px; min-width: 30px; font-size: 11px; }
+  .tile-all { font-size: 9px; min-height: 11px; margin-top: 1px; }
+  .tile-boost { font-size: 11px; top: -8px; }
+  .controls { gap: 6px; margin-top: 6px; }
+  .chips { flex: 1 1 100%; gap: 5px; padding-top: 5px; }
+  .chip { --size: 38px; font-size: 11px; border-width: 3px; }
+  .actions { flex: 1 1 100%; }
+  .actions .btn { flex: 1; padding: 6px 4px; min-height: 34px; font-size: 14px; }
+}
+
+/* short window: compact board */
+@media (max-height: 640px) {
+  .tile { padding: 4px 3px; }
+  .tile-pay { display: none; }
+  .tile-mine { height: 20px; margin-top: 2px; }
+  .tile-all { min-height: 0; }
+  .timer { height: 18px; }
+  .board-top { margin-bottom: 6px; }
+  .timer-text { line-height: 18px; font-size: 11px; }
+  .chip { --size: 38px; font-size: 11px; border-width: 3px; }
+  .btn { padding: 6px 10px; min-height: 34px; }
+  .controls { margin-top: 6px; }
+}
+
+/* short and wide (landscape phone, short popout): board moves into a column beside the stage */
+@media (max-height: 500px) and (min-aspect-ratio: 5/4) and (min-width: 520px) {
+  #app { grid-template-columns: minmax(0, 1fr) clamp(250px, 38vw, 420px); grid-template-rows: auto minmax(0, 1fr);
+    grid-template-areas: "top top" "main board"; }
+  .main { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
+  .side { display: block; padding: 3px 8px; border-left: 0; border-top: 1px solid var(--line); overflow: hidden; }
+  .side-title, .winners, .winners-title { display: none !important; }
+  .players { flex-direction: row; overflow-x: auto; scrollbar-width: none; }
+  .p-bets { display: none; }
+  .player { max-width: 150px; padding: 2px 8px 2px 2px; gap: 6px; }
+  .player .avatar { width: 20px; height: 20px; font-size: 10px; }
+  .p-name { font-size: 11px; }
+  .p-amt { font-size: 11px; }
+  .head-players { display: block; }
+  .top { flex-wrap: nowrap; padding: 4px 10px; }
+  .history { order: 0; flex: 1 1 auto; padding-top: 6px; }
+  .hist { height: 20px; min-width: 24px; font-size: 10px; padding: 0 5px; }
+  .board-wrap { border-top: 0; border-left: 1px solid var(--line); overflow-y: auto; padding: 6px 8px; }
+  .board { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
+  .tile-label { font-size: 18px; }
+  .tile.bonus .tile-label { font-size: 11px; }
+  .controls { flex-wrap: wrap; }
+  .chips { flex: 1 1 100%; }
+}
+
+/* tiny popout: watch only */
+@media (max-height: 300px), (max-width: 300px) {
+  .board, .controls, .side, .history, .balance, .my-total, #infoBtn { display: none !important; }
+  .tiny-note { display: block; }
+  #app { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; grid-template-areas: "top" "main" "board"; }
+  .board-wrap { border-left: 0; border-top: 1px solid var(--line); padding: 4px 8px; }
+  .top { padding: 4px 8px; }
+}

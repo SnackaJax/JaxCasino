@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <title>Raccoon Heist</title>
+  <link rel="stylesheet" href="/static/heist.css">
+</head>
+<body>
+  <div id="app">
+    <header class="top">
+      <button class="icon-btn" id="gamesBtn" title="All games" aria-label="All games">☰</button>
+      <div class="logo"><span class="l1">RACCOON</span><span class="l2">HEIST</span></div>
+      <div class="top-right">
+        <button class="icon-btn" id="muteBtn" title="Sound on/off" aria-label="Sound on/off">🔊</button>
+        <button class="icon-btn" id="infoBtn" title="Paytable and rules" aria-label="Paytable and rules">?</button>
+        <div class="balance"><span class="coin-dot"></span><span id="balance">–</span></div>
+      </div>
+    </header>
+
+    <main class="main">
+      <section class="stage" id="stage">
+        <div class="city-bg" aria-hidden="true"><div class="moon"></div><div class="skyline"></div></div>
+        <div class="play" id="play">
+          <div class="hud" id="hud">
+            <div class="crew" id="crew"></div>
+            <div class="stats">
+              <div class="meter" id="meter" aria-label="Loot Meter">
+                <div class="meter-label"><span class="lbl">LOOT</span> <b id="meterNum">0</b>/<span id="meterMax">15</span></div>
+                <div class="meter-track"><div class="meter-fill" id="meterFill"></div></div>
+              </div>
+              <div class="extra" id="bpBox" title="Blueprints grabbed"><span class="ico" id="bpIco"></span><b id="bpNum">0</b>/3</div>
+              <div class="extra hidden" id="freeBox" title="Free drops left"><span class="lbl">FREE</span> <b id="freeNum">0</b></div>
+            </div>
+          </div>
+          <div class="board-frame" id="boardFrame"><canvas id="board"></canvas></div>
+        </div>
+        <div class="win-bar" id="winBar"><span id="winText">Case the joint…</span></div>
+
+        <div class="banner hidden" id="banner"><div class="banner-main" id="bannerMain"></div><div class="banner-sub" id="bannerSub"></div></div>
+        <div class="lockers hidden" id="lockers">
+          <div class="lk-title">VAULT GRAB</div>
+          <div class="lk-sub" id="lkSub">Open lockers until the alarms catch the whole crew</div>
+          <div class="lk-grid" id="lkGrid"></div>
+          <div class="lk-crew" id="lkCrew"></div>
+          <div class="lk-total">WON <b id="lkTotal">0</b></div>
+        </div>
+        <div class="bigwin hidden" id="bigwin"><div class="bw-title" id="bwTitle"></div><div class="bw-amount" id="bwAmount"></div><div class="bw-skip">tap to skip</div></div>
+        <canvas id="fx"></canvas>
+        <div class="feed-pop" id="feedPop"></div>
+        <div class="toast hidden" id="toast"></div>
+        <div class="overlay" id="loading"><div class="spinner"></div><div id="loadingText">Connecting…</div></div>
+      </section>
+
+      <aside class="side">
+        <div class="side-title">In the crew <span id="playerCount"></span></div>
+        <div class="players" id="players"></div>
+        <div class="side-title">Big scores</div>
+        <div class="feed" id="feed"><div class="feed-empty">Nothing yet. Be the first!</div></div>
+      </aside>
+    </main>
+
+    <footer class="controls">
+      <div class="broke hidden" id="broke">
+        <div class="broke-text"><b>You're out of credits.</b> <span id="brokeText"></span></div>
+        <button class="btn btn-restart" id="restartBtn">Restart</button>
+      </div>
+      <div class="left-box">
+        <button class="btn buy-btn hidden" id="buyBtn" title="Bonus buys">BUY</button>
+        <div class="bet-box">
+          <button class="round-btn" id="betDown" aria-label="Lower bet">−</button>
+          <div class="bet-val"><div class="lbl">BET</div><div id="bet">100</div></div>
+          <button class="round-btn" id="betUp" aria-label="Raise bet">+</button>
+        </div>
+      </div>
+      <button class="spin-btn" id="spinBtn" aria-label="Spin"><span>SPIN</span></button>
+      <div class="right-box">
+        <div class="last-win"><div class="lbl">WIN</div><div id="lastWin">0</div></div>
+        <div class="toggles">
+          <button class="btn toggle" id="autoBtn" title="Keep spinning until you stop it">AUTO</button>
+          <button class="btn toggle" id="turboBtn" title="Faster animations">TURBO</button>
+        </div>
+      </div>
+    </footer>
+  </div>
+
+  <div class="modal hidden" id="buyModal">
+    <div class="modal-card">
+      <button class="icon-btn modal-close" id="buyClose" aria-label="Close">✕</button>
+      <h2>Inside info</h2>
+      <p class="buy-note">Skip the wait. Prices are for your current bet of <b id="buyBet">0</b>; every buy returns the same
+        share of what it costs as a normal spin.</p>
+      <div class="buys" id="buys"></div>
+    </div>
+  </div>
+
+  <div class="modal hidden" id="infoModal">
+    <div class="modal-card">
+      <button class="icon-btn modal-close" id="infoClose" aria-label="Close">✕</button>
+      <h2>Raccoon Heist</h2>
+      <div id="infoBody"></div>
+    </div>
+  </div>
+
+  <script type="module" src="/static/heist.js"></script>
+</body>
+</html>

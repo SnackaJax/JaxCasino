@@ -1,0 +1,163 @@
+/* ==========================================================================
+   SPIN FRENZY THEME: Royal Vegas
+   Burgundy velvet, gold leaf trim, warm marquee bulbs and jewel-colored spots.
+
+   Every color, font and corner radius the game uses lives here, including the parts drawn on the canvas
+   (main wheel, Frenzy Wheel, Peg Drop board), which read these variables when the page loads.
+   Change values here and reopen the Activity; no other file needs to change for a restyle.
+   Colors can be any CSS color (#hex, rgb(), hsl()). Canvas colors must be plain colors, not gradients.
+   ========================================================================== */
+
+/* Fonts are served from activity/static/fonts (Discord blocks outside font sites inside Activities).
+   Cinzel and Manrope are free fonts under the SIL Open Font License (see fonts/OFL-*.txt). */
+@font-face { font-family: "Cinzel"; font-weight: 400 900; font-display: swap;
+  src: url("/static/fonts/cinzel-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Cinzel"; font-weight: 400 900; font-display: swap;
+  src: url("/static/fonts/cinzel-latin-ext.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+@font-face { font-family: "Manrope"; font-weight: 200 800; font-display: swap;
+  src: url("/static/fonts/manrope-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Manrope"; font-weight: 200 800; font-display: swap;
+  src: url("/static/fonts/manrope-latin-ext.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+
+:root {
+  /* ---- fonts ---- */
+  --font-ui: "Manrope", "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+  --font-display: "Cinzel", Georgia, "Times New Roman", serif;  /* logo, titles, wheel labels, tile labels */
+  --display-weight: 900;
+  --display-style: normal;          /* italic or normal */
+
+  /* ---- page ---- */
+  --bg: #12030a;                    /* behind everything */
+  --bg-glow: #5a1022;               /* spotlight glow behind the stage */
+  --bg-pattern: repeating-linear-gradient(45deg, rgba(215,170,69,.045) 0 1px, transparent 1px 30px),
+                repeating-linear-gradient(-45deg, rgba(215,170,69,.045) 0 1px, transparent 1px 30px);  /* velvet lattice; use none to drop */
+  --bg2: #2a0610;                   /* dialogs */
+  --panel: #3a0c18;                 /* cards, buttons, player rows */
+  --panel2: #4f1222;                /* hovered / raised panels */
+  --line: #8a6420;                  /* borders (antique gold) */
+  --text: #fff6dc;                  /* ivory */
+  --muted: #d6b98a;
+  --accent: #d7aa45;                /* gold: banners, highlights, timer end */
+  --accent2: #f6dd8a;               /* champagne: "you" outline, timer start */
+  --good: #4ade80;                  /* wins */
+  --bad: #ff6b6b;                   /* errors */
+  --radius: 8px;                    /* tiles and cards */
+  --radius-small: 6px;              /* buttons */
+
+  /* ---- logo (gradient fills for the two words) ---- */
+  --logo-spin-fill: linear-gradient(180deg, #fff6dc 10%, #f6dd8a 55%, #c9962f);
+  --logo-frenzy-fill: linear-gradient(180deg, #fff1b8 10%, #d9a434 60%, #9c6a12);
+  --logo-glow: rgba(215, 170, 69, 0.45);
+
+  /* ---- board spots: jewel tones (tiles, wheel segments, history, bet tags) ---- */
+  --spot-1: #1f8a70;                /* emerald */
+  --spot-2: #c2410c;                /* topaz */
+  --spot-5: #2b4fb8;                /* sapphire */
+  --spot-10: #b3123b;               /* ruby */
+  --spot-coin: #d4a017;             /* gold */
+  --spot-grid: #0f7a4a;             /* jade */
+  --spot-drop: #1d6fa5;             /* aquamarine */
+  --spot-frenzy: #7b2fa0;           /* amethyst */
+  --tile-text: #fff6dc;
+  --tile-border: 2px solid #d7aa45; /* gold rim around each bet tile */
+  --tile-shadow: inset 0 0 0 2px rgba(0, 0, 0, 0.35), 0 3px 10px rgba(0, 0, 0, 0.35);
+  --hist-text: #fff6dc;             /* text on history badges and bet tags */
+
+  /* ---- bonus round titles ---- */
+  --title-coin: #f6dd8a;
+  --title-grid: #6fd3a0;
+  --title-drop: #8cc8ef;
+  --title-frenzy: #d7a6f0;
+
+  /* ---- main wheel (canvas) ---- */
+  --wheel-rim: #e8c063;
+  --wheel-rim-dark: #7a4f0a;
+  --wheel-rim-edge: #fff1b8;        /* thin bright line around the rim */
+  --wheel-separator: rgba(243, 210, 122, 0.55);  /* lines between segments */
+  --wheel-label: #fff6dc;
+  --wheel-light-on: #fff3c4;        /* marquee bulbs */
+  --wheel-light-off: #a5762a;
+  --wheel-light-glow: #ffd36b;
+  --wheel-hub: #4a0e1c;
+  --wheel-hub-dark: #1a0409;
+  --wheel-hub-ring: #f3d27a;
+  --wheel-hub-text-1: #f6dd8a;      /* "SPIN" on the hub */
+  --wheel-hub-text-2: #f6dd8a;      /* "FRENZY" on the hub */
+  --wheel-pointer: #f3d27a;
+  --wheel-win-outline: #fff6dc;
+
+  /* ---- Boost Reel ---- */
+  --boost-bg: #4a0e1c;
+  --boost-bg-dark: #2a0610;
+  --boost-border: #d7aa45;
+  --boost-window: #1a0409;
+  --boost-mult: #f6d36b;            /* the multiplier text and the "×N" badge on tiles */
+
+  /* ---- Coin Toss ---- */
+  --coin-gold: #f2b705;
+  --coin-gold-light: #fff3a6;
+  --coin-gold-text: #ffd84a;
+  --coin-silver: #c4cad6;
+  --coin-silver-light: #ffffff;
+  --coin-silver-text: #e7ecf5;
+
+  /* ---- Treasure Grid ---- */
+  --chest: #5b2a12;
+  --chest-dark: #2e1206;
+  --chest-border: #d7aa45;
+  --prize: #12603f;
+  --prize-dark: #06301f;
+  --prize-border: #d7aa45;
+
+  /* ---- Peg Drop (canvas) ---- */
+  --peg: #f3d27a;
+  --drop-slot: #4a0e1c;
+  --drop-double: #d7aa45;
+  --drop-high: #b3123b;             /* the big (75x+) edge slots */
+  --drop-closed: #3a2a20;
+  --drop-landed: #fff6dc;
+  --drop-ball: #e0294f;
+  --drop-flash: #f6dd8a;
+
+  /* ---- Frenzy Wheel (canvas) ---- */
+  --frenzy-1: #8b1e3f;
+  --frenzy-2: #1f5f99;
+  --frenzy-3: #0f7a4a;
+  --frenzy-4: #a8661a;
+  --frenzy-5: #5b2a86;
+  --frenzy-6: #1d6f73;
+  --frenzy-7: #b3123b;
+  --frenzy-8: #2b4fb8;
+  --frenzy-double: #e7d3a3;
+  --frenzy-triple: #f3d27a;
+  --frenzy-rim: #3a0c18;
+  --frenzy-hub: #1a0409;
+  --pointer-1: #e0294f;             /* Ruby */
+  --pointer-2: #20a36b;             /* Jade */
+  --pointer-3: #3b6fd8;             /* Sapphire */
+
+  /* ---- Discord mobile: space kept free at the top for Discord's own bar (server name, Leave button) ---- */
+  --discord-mobile-top: 54px;
+
+  /* ---- winners feed (names fading in and gliding down, top left) ---- */
+  --feed-bg: rgba(26, 4, 9, 0.86);
+  --feed-border: #8a6420;
+  --feed-name: #fff6dc;
+  --feed-amount: #4ade80;
+  --feed-top-winner: #f6dd8a;       /* border/glow of the biggest win of the round */
+
+  /* ---- chips (by value) ---- */
+  --chip-border: 2px solid #f3d27a;
+  --chip-10: #5b6470;
+  --chip-50: #2b4fb8;
+  --chip-100: #0f7a4a;
+  --chip-500: #7b2fa0;
+  --chip-1000: #c2410c;
+  --chip-5000: #b3123b;
+  --chip-25000: #1d6f73;
+  --chip-100000: #151515;
+}

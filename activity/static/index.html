@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>Spin Frenzy</title>
+  <link rel="stylesheet" href="/static/theme.css">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div id="app">
+    <header class="top">
+      <div class="logo"><span class="logo-spin">SPIN</span><span class="logo-frenzy">FRENZY</span></div>
+      <div class="history" id="history"></div>
+      <div class="top-right">
+        <div class="head-players" id="headPlayers" title="Players"></div>
+        <button class="icon-btn" id="gamesBtn" title="All games" aria-label="All games">☰</button>
+        <button class="icon-btn" id="muteBtn" title="Sound on/off" aria-label="Sound on/off">🔊</button>
+        <button class="icon-btn" id="infoBtn" title="How to play">?</button>
+        <div class="balance"><span class="coin-dot"></span><span id="balance">–</span></div>
+      </div>
+    </header>
+
+    <main class="main">
+      <section class="stage" id="stage">
+        <canvas id="canvas"></canvas>
+
+        <div class="boost" id="boostReel">
+          <div class="boost-label">BOOST REEL</div>
+          <div class="boost-windows">
+            <div class="boost-win" id="boostSpot">–</div>
+            <div class="boost-win mult" id="boostMult">–</div>
+          </div>
+        </div>
+
+        <div class="bonus-head hidden" id="bonusHead">
+          <div class="bonus-title" id="bonusTitle"></div>
+          <div class="bonus-sub" id="bonusSub"></div>
+        </div>
+
+        <!-- Coin Toss -->
+        <div class="scene hidden" id="coinScene">
+          <div class="coin-row">
+            <div class="coin-side gold" id="coinGoldBox"><div class="cs-name">GOLD</div><div class="cs-val" id="coinGold">?</div></div>
+            <div class="coin-3d"><div class="coin" id="coin">
+              <div class="coin-face front"><span>★</span></div>
+              <div class="coin-face back"><span>☾</span></div>
+            </div></div>
+            <div class="coin-side silver" id="coinSilverBox"><div class="cs-name">SILVER</div><div class="cs-val" id="coinSilver">?</div></div>
+          </div>
+        </div>
+
+        <!-- Treasure Grid -->
+        <div class="scene hidden" id="gridScene">
+          <div class="grid" id="grid"></div>
+        </div>
+
+        <!-- Frenzy Wheel pointer picker -->
+        <div class="pointer-pick hidden" id="pointerPick"></div>
+
+        <div class="win-feed" id="winFeed"></div>
+        <div class="banner hidden" id="banner"><div class="banner-main" id="bannerMain"></div><div class="banner-sub" id="bannerSub"></div></div>
+        <div class="toast hidden" id="toast"></div>
+        <div class="overlay" id="loading"><div class="spinner"></div><div id="loadingText">Connecting…</div></div>
+      </section>
+
+      <aside class="side">
+        <div class="side-title">Players <span id="playerCount"></span></div>
+        <div class="players" id="players"></div>
+        <div class="side-title winners-title hidden" id="winnersTitle">Last round</div>
+        <div class="winners" id="winners"></div>
+      </aside>
+    </main>
+
+    <footer class="board-wrap">
+      <div class="tiny-note">Make the window bigger to place bets</div>
+      <div class="broke hidden" id="broke">
+        <div class="broke-text"><b>You're out of credits.</b> <span id="brokeText"></span></div>
+        <button class="btn btn-restart" id="restartBtn">Restart</button>
+      </div>
+      <div class="board-top">
+        <div class="timer"><div class="timer-fill" id="timerFill"></div><div class="timer-text" id="timerText"></div></div>
+        <div class="my-total">Your bet: <b id="myTotal">0</b></div>
+      </div>
+      <div class="board" id="board"></div>
+      <div class="controls">
+        <div class="chips" id="chips"></div>
+        <div class="actions">
+          <button class="btn" id="clearBtn">Clear</button>
+          <button class="btn" id="repeatBtn">Repeat</button>
+          <button class="btn" id="doubleBtn">Double</button>
+          <button class="btn btn-auto" id="autoBtn" title="Place your last bets again every round">🔁 Auto</button>
+        </div>
+      </div>
+    </footer>
+  </div>
+
+  <div class="modal hidden" id="infoModal">
+    <div class="modal-card">
+      <button class="icon-btn modal-close" id="infoClose">✕</button>
+      <h2>How to play Spin Frenzy</h2>
+      <div id="infoBody"></div>
+    </div>
+  </div>
+
+  <script type="module" src="/static/app.js"></script>
+</body>
+</html>

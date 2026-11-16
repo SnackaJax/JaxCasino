@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>Poker</title>
+  <link rel="stylesheet" href="/static/poker.css">
+</head>
+<body>
+  <div id="app">
+    <header class="top">
+      <button class="icon-btn" id="gamesBtn" title="All games" aria-label="All games">☰</button>
+      <div class="logo"><span class="suit">♠</span> HOLD'EM</div>
+      <div class="crumb" id="crumb"></div>
+      <div class="top-right">
+        <button class="icon-btn" id="muteBtn" title="Sound on/off" aria-label="Sound on/off">🔊</button>
+        <button class="icon-btn" id="infoBtn" title="How to play" aria-label="How to play">?</button>
+        <div class="balance"><span class="coin-dot"></span><span id="balance">–</span></div>
+      </div>
+    </header>
+
+    <!-- the poker room: open tables and a form to open a new one -->
+    <main class="room" id="room">
+      <section class="room-main">
+        <h2>Tables</h2>
+        <div class="tables" id="tables"></div>
+      </section>
+      <aside class="room-side">
+        <div class="panel open-table">
+          <h3>Open a table</h3>
+          <div class="field">
+            <div class="lbl">Buy-in (every player brings this many chips)</div>
+            <div class="stepper">
+              <button class="round-btn" id="buyDown" aria-label="Lower buy-in">−</button>
+              <div class="step-val" id="buyIn">1,000</div>
+              <button class="round-btn" id="buyUp" aria-label="Raise buy-in">+</button>
+            </div>
+            <div class="hint" id="blindsHint"></div>
+          </div>
+          <div class="field">
+            <div class="lbl">Seats</div>
+            <div class="seat-pick" id="seatPick"></div>
+          </div>
+          <button class="btn btn-gold" id="createBtn">Open table and sit down</button>
+        </div>
+        <div class="panel">
+          <h3>In the room <span id="roomCount"></span></h3>
+          <div class="people" id="people"></div>
+        </div>
+      </aside>
+    </main>
+
+    <!-- a table -->
+    <main class="table-view hidden" id="tableView">
+      <section class="table-area" id="tableArea">
+        <div class="felt" id="felt">
+          <div class="felt-logo">♠ ♥ HOLD'EM ♣ ♦</div>
+          <div class="center">
+            <div class="street" id="street"></div>
+            <div class="pot" id="pot"><span class="chip-icon"></span><span id="potAmount">0</span></div>
+            <div class="board" id="board"></div>
+            <div class="result" id="result"></div>
+          </div>
+          <div class="deck" id="deck"><div class="card"><div class="face back"></div></div><div class="card"><div class="face back"></div></div></div>
+        </div>
+        <div class="seats" id="seats"></div>
+        <div class="fly-layer" id="flyLayer"></div>
+        <div class="table-msg hidden" id="tableMsg"></div>
+      </section>
+      <aside class="table-side">
+        <div class="panel table-info" id="tableInfo"></div>
+        <div class="panel log-panel"><h3>Hand log</h3><div class="log" id="log"></div></div>
+      </aside>
+      <footer class="actions" id="actions">
+        <div class="my-hand" id="myHand"></div>
+        <div class="act-row hidden" id="actRow">
+          <button class="btn btn-fold" id="foldBtn">Fold</button>
+          <button class="btn btn-call" id="callBtn">Check</button>
+          <div class="raise-box" id="raiseBox">
+            <div class="presets" id="presets"></div>
+            <div class="slider-row">
+              <input type="range" id="raiseRange" min="0" max="100" step="1">
+              <div class="raise-val" id="raiseVal">0</div>
+            </div>
+          </div>
+          <button class="btn btn-raise" id="raiseBtn">Raise</button>
+        </div>
+        <div class="wait-row" id="waitRow">
+          <button class="btn btn-gold hidden" id="sitBtn">Sit down</button>
+          <button class="btn btn-gold hidden" id="startBtn">Deal the first hand</button>
+          <button class="btn hidden" id="backBtn">← All tables</button>
+          <button class="btn hidden" id="leaveBtn">Leave table</button>
+          <div class="wait-text" id="waitText"></div>
+        </div>
+      </footer>
+    </main>
+
+    <div class="toast hidden" id="toast"></div>
+    <div class="overlay" id="loading"><div class="spinner"></div><div id="loadingText">Connecting…</div></div>
+  </div>
+
+  <div class="modal hidden" id="infoModal">
+    <div class="modal-card">
+      <button class="icon-btn modal-close" id="infoClose">✕</button>
+      <h2>Texas Hold'em</h2>
+      <div id="infoBody"></div>
+    </div>
+  </div>
+
+  <script type="module" src="/static/poker.js"></script>
+</body>
+</html>

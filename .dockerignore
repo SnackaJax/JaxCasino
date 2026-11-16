@@ -1,0 +1,4 @@
+# The image only needs requirements.txt. Everything else (tokens, databases, logs, code)
+# stays out of the image and is linked in at runtime by docker-compose.yml.
+*
+!requirements.txt

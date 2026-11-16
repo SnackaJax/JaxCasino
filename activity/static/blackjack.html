@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>Blackjack</title>
+  <link rel="stylesheet" href="/static/blackjack.css">
+</head>
+<body>
+  <div id="app">
+    <header class="top">
+      <button class="icon-btn" id="gamesBtn" title="All games" aria-label="All games">☰</button>
+      <div class="logo"><span class="suit">♠</span><span class="word"> BLACKJACK</span></div>
+      <div class="crumb" id="crumb"></div>
+      <div class="top-right">
+        <button class="icon-btn hidden" id="chatBtn" title="Quick chat" aria-label="Quick chat" aria-expanded="false">💬</button>
+        <button class="icon-btn" id="voiceBtn" title="Dealer's voice on/off" aria-label="Dealer's voice on/off">🗣</button>
+        <button class="icon-btn" id="muteBtn" title="Sound on/off" aria-label="Sound on/off">🔊</button>
+        <button class="icon-btn" id="infoBtn" title="How to play" aria-label="How to play">?</button>
+        <div class="balance"><span class="coin-dot"></span><span id="balance">–</span></div>
+      </div>
+    </header>
+
+    <!-- the blackjack room: open tables and a form to open a new one -->
+    <main class="room" id="room">
+      <section class="room-main">
+        <h2>Tables</h2>
+        <div class="tables" id="tables"></div>
+      </section>
+      <aside class="room-side">
+        <div class="panel open-table">
+          <h3>Open a table</h3>
+          <div class="field">
+            <div class="lbl">Minimum bet</div>
+            <div class="stepper">
+              <button class="round-btn" id="minDown" aria-label="Lower minimum bet">−</button>
+              <div class="step-val" id="minBet">100</div>
+              <button class="round-btn" id="minUp" aria-label="Raise minimum bet">+</button>
+            </div>
+            <div class="hint" id="limitsHint"></div>
+          </div>
+          <div class="field">
+            <div class="lbl">Seats</div>
+            <div class="seat-pick" id="seatPick"></div>
+          </div>
+          <button class="btn btn-gold" id="createBtn">Open table and sit down</button>
+        </div>
+        <div class="panel">
+          <h3>In the room <span id="roomCount"></span></h3>
+          <div class="people" id="people"></div>
+        </div>
+      </aside>
+    </main>
+
+    <!-- a table -->
+    <main class="table-view hidden" id="tableView">
+      <section class="table-area" id="tableArea">
+        <div class="felt" id="felt">
+          <svg class="felt-text" id="feltText" aria-hidden="true">
+            <defs><path id="arc1" d=""></path><path id="arc2" d=""></path></defs>
+            <text class="t1"><textPath href="#arc1" startOffset="50%" text-anchor="middle">BLACKJACK PAYS 3 TO 2</textPath></text>
+            <text class="t2"><textPath href="#arc2" startOffset="50%" text-anchor="middle">DEALER MUST STAND ON ALL 17s</textPath></text>
+          </svg>
+        </div>
+        <div class="rack" id="rack"></div>
+        <div class="shoe" id="shoe"><div class="shoe-cards"></div><div class="shoe-lip"></div></div>
+        <div class="tray" id="tray"><div class="tray-cards" id="trayCards"></div></div>
+        <div class="dealer-total total hidden" id="dealerTotal"></div>
+        <div class="spots" id="spots"></div>
+        <div class="cards-layer" id="cardsLayer"></div>
+        <div class="fly-layer" id="flyLayer"></div>
+        <div class="center-msg hidden" id="centerMsg"></div>
+        <div class="banner hidden" id="banner"></div>
+        <div class="chat-layer" id="chatLayer"></div>
+      </section>
+      <aside class="table-side">
+        <div class="panel table-info" id="tableInfo"></div>
+        <div class="panel log-panel"><h3>Table log</h3><div class="log" id="log"></div></div>
+      </aside>
+      <footer class="actions" id="actions">
+        <div class="timer-bar hidden" id="timerBar"><div id="timerFill"></div></div>
+        <div class="bet-row hidden" id="betRow">
+          <div class="bet-target" id="betTarget" role="radiogroup" aria-label="Where your chips go">
+            <button data-t="main" class="on">Main</button>
+            <button data-t="pp" title="Perfect Pairs: your first two cards are a pair">Pairs</button>
+            <button data-t="t3" title="21+3: your first two cards and the dealer's card make a poker hand">21+3</button>
+          </div>
+          <div class="chip-pick" id="chipPick"></div>
+          <div class="bet-btns">
+            <button class="btn btn-leave" id="betLeaveBtn" title="Leave the table (any bet you've put down comes back)">Leave</button>
+            <button class="btn" id="clearBtn">Clear</button>
+            <button class="btn" id="rebetBtn">Rebet</button>
+            <button class="btn" id="x2Btn">×2</button>
+            <button class="btn btn-gold" id="dealBtn">Deal</button>
+          </div>
+        </div>
+        <div class="act-row hidden" id="actRow">
+          <div class="my-total" id="myTotal"></div>
+          <button class="btn btn-hit" id="hitBtn">Hit</button>
+          <button class="btn btn-stand" id="standBtn">Stand</button>
+          <button class="btn btn-double" id="doubleBtn">Double</button>
+          <button class="btn btn-split" id="splitBtn">Split</button>
+        </div>
+        <div class="wait-row" id="waitRow">
+          <button class="btn btn-gold hidden" id="sitBtn">Sit down</button>
+          <button class="btn hidden" id="backBtn">← All tables</button>
+          <button class="btn hidden" id="leaveBtn">Leave table</button>
+          <div class="wait-text" id="waitText"></div>
+        </div>
+      </footer>
+    </main>
+
+    <div class="chat-panel hidden" id="chatPanel" role="dialog" aria-label="Quick chat">
+      <div class="chat-emotes" id="chatEmotes"></div>
+      <div class="chat-phrases" id="chatPhrases"></div>
+    </div>
+    <div class="toast hidden" id="toast"></div>
+    <div class="overlay" id="loading"><div class="spinner"></div><div id="loadingText">Connecting…</div></div>
+  </div>
+
+  <div class="modal hidden" id="infoModal">
+    <div class="modal-card">
+      <button class="icon-btn modal-close" id="infoClose">✕</button>
+      <h2>Blackjack</h2>
+      <div id="infoBody"></div>
+    </div>
+  </div>
+
+  <script type="module" src="/static/blackjack.js"></script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+# Line endings: LF in the repository and the working copy (the bot also runs in a Linux container), CRLF for
+# Windows batch files.
+* text=auto eol=lf
+*.bat text eol=crlf
+*.png binary
+*.jpg binary
+*.woff2 binary
+*.ttf binary
+*.onnx binary
+*.bin binary

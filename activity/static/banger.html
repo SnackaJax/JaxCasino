@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>Banger Bash</title>
+  <link rel="stylesheet" href="/static/banger.css">
+</head>
+<body>
+  <div id="app">
+    <header class="top">
+      <button class="icon-btn" id="gamesBtn" title="All games" aria-label="All games">☰</button>
+      <div class="logo"><span class="l1">BANGER</span><span class="l2">BASH</span></div>
+      <div class="top-right">
+        <button class="icon-btn" id="muteBtn" title="Sound on/off" aria-label="Sound on/off">🔊</button>
+        <button class="icon-btn" id="infoBtn" title="Paytable and rules" aria-label="Paytable and rules">?</button>
+        <div class="balance"><span class="coin-dot"></span><span id="balance">–</span></div>
+      </div>
+    </header>
+
+    <main class="main">
+      <section class="stage" id="stage">
+        <div class="lights" aria-hidden="true"></div>
+        <div class="machine" id="machine">
+          <div class="machine-head">
+            <div class="pill hidden" id="freeInfo"></div>
+            <div class="mode" id="modeLabel"></div>
+            <div class="pill gold hidden" id="multInfo"></div>
+          </div>
+          <div class="reels-wrap" id="reelsWrap">
+            <div class="reels-frame" id="reelsFrame"><canvas id="reels"></canvas></div>
+          </div>
+          <div class="win-bar" id="winBar"><span id="winText">Fire up the grill!</span></div>
+        </div>
+
+        <!-- Grill Bonus: the ladder of features -->
+        <div class="scene hidden" id="ladderScene">
+          <div class="scene-title">GRILL BONUS</div>
+          <div class="ladder-wrap">
+            <div class="thermo" id="thermo"></div>
+            <div class="rungs" id="rungs"></div>
+          </div>
+          <div class="ladder-note" id="ladderNote"></div>
+          <div class="scene-buttons">
+            <button class="btn btn-take" id="takeBtn">Take it</button>
+            <button class="btn btn-heat" id="heatBtn">🔥 Turn up the heat</button>
+          </div>
+        </div>
+
+        <!-- Hot Potato -->
+        <div class="scene hidden" id="potatoScene">
+          <div class="scene-title">HOT POTATO</div>
+          <div class="grill-plate">
+            <div class="embers" aria-hidden="true"></div>
+            <div class="sausages" id="sausages"></div>
+          </div>
+          <div class="scene-foot">
+            <div class="pill fire" id="potatoRound"></div>
+            <div class="scene-msg" id="potatoMsg"></div>
+            <div class="pill good" id="potatoTotal"></div>
+          </div>
+        </div>
+
+        <!-- Picnic Pick -->
+        <div class="scene hidden" id="picnicScene">
+          <div class="scene-title">PICNIC PICK</div>
+          <div class="hampers" id="hampers"></div>
+          <div class="scene-foot">
+            <div class="pill" id="picnicDouble"></div>
+            <div class="scene-msg" id="picnicMsg">Find the prizes · avoid the ant nests</div>
+            <div class="pill good" id="picnicTotal"></div>
+          </div>
+        </div>
+
+        <!-- Golden Grill -->
+        <div class="scene hidden" id="goldenScene">
+          <div class="scene-title">GOLDEN GRILL</div>
+          <div class="golden">
+            <div class="golden-glow" id="goldenGlow"></div>
+            <div class="golden-flames" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+            <div class="golden-value" id="goldenValue">20x</div>
+            <div class="golden-step" id="goldenStep"></div>
+          </div>
+          <div class="scene-foot">
+            <div class="pill fire" id="goldenMax"></div>
+            <div class="scene-msg" id="goldenMsg">Turning up the heat…</div>
+            <div class="pill good" id="goldenWin"></div>
+          </div>
+        </div>
+
+        <div class="banner hidden" id="banner"><div class="banner-main" id="bannerMain"></div><div class="banner-sub" id="bannerSub"></div></div>
+        <div class="bigwin hidden" id="bigwin"><div class="bw-title" id="bwTitle"></div><div class="bw-amount" id="bwAmount"></div><div class="bw-skip">tap to skip</div></div>
+        <canvas id="fx"></canvas>
+        <div class="feed-pop" id="feedPop"></div>
+        <div class="toast hidden" id="toast"></div>
+        <div class="overlay" id="loading"><div class="spinner"></div><div id="loadingText">Connecting…</div></div>
+      </section>
+
+      <aside class="side">
+        <div class="side-title">At the barbecue <span id="playerCount"></span></div>
+        <div class="players" id="players"></div>
+        <div class="side-title">Big wins</div>
+        <div class="feed" id="feed"><div class="feed-empty">Nothing yet. Be the first!</div></div>
+      </aside>
+    </main>
+
+    <footer class="controls">
+      <div class="broke hidden" id="broke">
+        <div class="broke-text"><b>You're out of credits.</b> <span id="brokeText"></span></div>
+        <button class="btn btn-restart" id="restartBtn">Restart</button>
+      </div>
+      <div class="bet-box">
+        <button class="round-btn" id="betDown" aria-label="Lower bet">−</button>
+        <div class="bet-val"><div class="lbl">BET</div><div id="bet">100</div></div>
+        <button class="round-btn" id="betUp" aria-label="Raise bet">+</button>
+      </div>
+      <div class="last-win"><div class="lbl">WIN</div><div id="lastWin">0</div></div>
+      <button class="spin-btn" id="spinBtn" aria-label="Spin"><span>SPIN</span></button>
+      <div class="toggles">
+        <button class="btn toggle" id="autoBtn" title="Keep spinning until you stop it or a bonus starts">AUTO</button>
+        <button class="btn toggle" id="turboBtn" title="Faster animations">TURBO</button>
+      </div>
+    </footer>
+  </div>
+
+  <div class="modal hidden" id="infoModal">
+    <div class="modal-card">
+      <button class="icon-btn modal-close" id="infoClose">✕</button>
+      <h2>Banger Bash</h2>
+      <div id="infoBody"></div>
+    </div>
+  </div>
+
+  <script type="module" src="/static/banger.js"></script>
+</body>
+</html>

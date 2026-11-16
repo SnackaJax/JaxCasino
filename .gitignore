@@ -1,0 +1,35 @@
+# Secrets: the bot token and client secret live here. Copy .env.example to .env instead.
+.env
+.env.*
+!.env.example
+config.json
+
+# The databases: everyone's balances and Discord IDs
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# Logs and Python leftovers
+logs/
+*.log
+*.log.*
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Voice models: too big for GitHub (download them with python download_voices.py)
+voices/*
+!voices/README.md
+
+# Local tools and notes
+.claude/
+mockups/
+research/
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store

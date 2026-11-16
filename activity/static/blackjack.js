@@ -79,7 +79,7 @@ function onMessage(m) {
       break;
     case 'me': balance = m.balance; showBalance(); renderForm(); renderRoom(); if (T) renderControls(T); break;
     case 'room': room = m; renderRoom(); break;
-    case 'table': enqueue(m); break;
+    case 'table': pickSeat(m); enqueue(m); break;
     case 'chat': showChat(m); break;
     case 'notice': toast(m.message, true); break;
     case 'error': toast(m.message); sfx.error(); if (T) renderControls(T); break;
@@ -139,6 +139,34 @@ function avatarHtml(p, cls = 'avatar') {
     : `<div class="${cls}">${esc((p.name || '?').slice(0, 1).toUpperCase())}</div>`;
 }
 
+// ------------------------------------------------------------------ your seats
+// A player can sit at more than one seat of a table. st.mine lists them; st.you is the one in focus: the chips you
+// tap go there. It's the seat whose turn it is, else the one you last tapped, else your first.
+let focus = -1;
+function pickSeat(st) {
+  if (!st.id) return;
+  st.mine = st.mine || (st.you >= 0 ? [st.you] : []);
+  if (st.phase === 'playing' && st.turn && st.mine.includes(st.turn.seat)) focus = st.turn.seat;
+  if (!st.mine.includes(focus)) focus = st.mine.length ? st.mine[0] : -1;
+  st.you = focus;
+}
+const isMine = (st, i) => !!(st && st.mine && st.mine.includes(i));
+// tapping one of your seats while bets are open puts the next chips there
+function focusSeat(i, k) {
+  if (!T || !isMine(T, i) || T.phase !== 'betting') return;
+  sfx.click();
+  focus = i;
+  for (const st of [T, S]) if (st && st.id === T.id) st.you = i;
+  if (k) setTarget(k); else renderStatic(T);
+}
+// your seats' bets, added up (for the buttons that work on all of them: Clear, Rebet, ×2 and Deal)
+function myBets(st) {
+  const seats = (st.mine || []).map((i) => st.seats[i]).filter(Boolean);
+  return { seats, any: seats.some((s) => s.bet), sides: seats.some((s) => s.side.pp + s.side.t3),
+    rebet: seats.filter((s) => s.last_bet && !s.bet && !(s.side.pp + s.side.t3)),
+    ready: seats.length > 0 && seats.every((s) => s.ready) };
+}
+
 // ------------------------------------------------------------------ chips
 const denomFor = (v) => [...DENOMS].reverse().find((d) => d[0] <= v) || DENOMS[0];
 function chipHtml(v, label = '', style = '') {
@@ -155,9 +183,11 @@ function chipsFor(amount, max = 8) {
   }
   return out.length ? out : [DENOMS[0][0]];
 }
-function stackHtml(amount, max = 8) {
-  if (!amount) return '';
-  return chipsFor(amount, max).map((v, i) => chipHtml(v, '', `top:${-i * 3}px`)).join('');
+function stackHtml(amount, max = 8, extra = 0) {
+  if (!amount && !extra) return '';
+  const chips = [...(amount ? chipsFor(amount, extra ? Math.min(max, 4) : max) : []), ...(extra ? chipsFor(extra, max) : [])];
+  const step = chips.length > 6 ? 2.5 : 3;
+  return chips.map((v, i) => chipHtml(v, '', `top:${(-i * step).toFixed(1)}px`)).join('');
 }
 // a small pile of chips worth `amount`, for flying across the table
 function chipPile(amount, max = 5) {
@@ -247,12 +277,16 @@ function setupInfo() {
       <li>${W.decks}-deck shoe. The dealer stands on all 17s. A win pays 1:1, blackjack pays 3:2, a tie is a push (your
       bet comes back). When the dealer has blackjack, the round ends straight away.</li>
       <li>Anyone in the server can watch a table. A seat with no bet for a few rounds in a row is given up.</li>
+      <li>You can play up to ${W.max_each || 1} seats at once: tap <b>+ SEAT</b> on an empty one. Tap one of your seats
+      to put your chips there. <b>Clear</b>, <b>Rebet</b>, <b>×2</b> and <b>Deal</b> work on all your seats; × on a
+      seat leaves just that one.</li>
       <li>💬 at the top: quick chats and emotes for everyone at the table.</li>
     </ul>
     <h3>Side bets</h3>
     <p>Next to your betting circle are two small ones for side bets. Pick <b>Pairs</b> or <b>21+3</b> above the chips
     (or tap the small circle) and put chips on it. A side bet goes with a main bet and can be at most as big as it.
-    Side bets are paid straight after the deal, whatever happens to your hand.</p>
+    Side bets are paid straight after the deal, whatever happens to your hand: the winnings are stacked on top of your
+    side bet and come to you with the rest when the round is paid.</p>
     <table class="pays"><tr><th colspan="2">Perfect Pairs <small>(your first two cards)</small></th></tr>
       ${payRow(W, 'pp', 'perfect', 'same card, e.g. 8♥ 8♥')}${payRow(W, 'pp', 'colored', 'same colour, e.g. 8♥ 8♦')}
       ${payRow(W, 'pp', 'mixed', 'red and black, e.g. 8♥ 8♠')}
@@ -588,7 +622,7 @@ async function flyIn(key, { flip = true } = {}) {
 
 // ------------------------------------------------------------------ building and drawing the table
 function buildTable(st) {
-  layoutKey = `${st.id}|${st.max}|${st.you}`;
+  layoutKey = `${st.id}|${st.max}`;
   for (const m of [cardEls, totalEls, stampEls]) { for (const el of m.values()) el.remove(); m.clear(); }
   const host = $('spots');
   host.innerHTML = '';
@@ -599,17 +633,21 @@ function buildTable(st) {
       ${SIDE.map((k) => `<div class="side-spot" data-k="${k}"><span class="lbl">${k === 'pp' ? 'PAIRS' : '21+3'}</span>
         <div class="stack"></div><span class="side-amt hidden"></span></div>`).join('')}
       <button class="sit-btn hidden">SIT</button>
-      <div class="plate"><div class="ring"></div><div class="who"><div class="nm"></div><div class="st"></div></div></div>`;
+      <div class="plate"><div class="ring"></div><div class="who"><div class="nm"></div><div class="st"></div></div>
+        <button class="unsit hidden" title="Leave this seat">×</button></div>`;
     host.appendChild(root);
     const e = { root, circle: root.querySelector('.circle'), stack: root.querySelector('.stack'), amt: root.querySelector('.bet-amt'),
       sit: root.querySelector('.sit-btn'), plate: root.querySelector('.plate'), ring: root.querySelector('.ring'),
-      nm: root.querySelector('.nm'), st: root.querySelector('.st'), id: null, sides: {} };
+      nm: root.querySelector('.nm'), st: root.querySelector('.st'), unsit: root.querySelector('.unsit'), id: null, sides: {} };
     for (const k of SIDE) {
       const el = root.querySelector(`.side-spot[data-k="${k}"]`);
       e.sides[k] = { root: el, stack: el.querySelector('.stack'), amt: el.querySelector('.side-amt'), shown: 0 };
       // your own side circles can be tapped to put the next chips on them
-      el.addEventListener('click', () => { if (T && T.you === i && T.phase === 'betting') { sfx.click(); setTarget(k); } });
+      el.addEventListener('click', () => focusSeat(i, k));
     }
+    e.circle.addEventListener('click', () => focusSeat(i, 'main'));
+    e.plate.addEventListener('click', (ev) => { if (!ev.target.closest('.unsit')) focusSeat(i); });
+    e.unsit.addEventListener('click', () => { unlock(); sfx.click(); send({ type: 'leave', seat: i }); });
     e.sit.addEventListener('click', () => { unlock(); sfx.click(); send({ type: 'sit', seat: i }); });
     resizer.observe(e.plate);
     stackShown[i] = 0;
@@ -622,10 +660,19 @@ function buildTable(st) {
 function setSideStack(i, k, amount) {
   const e = spotEls[i] && spotEls[i].sides[k];
   if (!e) return;
-  if (e.shown !== amount) { e.shown = amount; e.stack.innerHTML = stackHtml(amount, 5); }
-  e.amt.classList.toggle('hidden', !amount);
-  e.amt.textContent = shortNum(amount);
-  e.amt.title = fmt(amount);
+  const [bet, won] = Array.isArray(amount) ? amount : [amount, 0];
+  const key = `${bet}+${won}`;
+  if (e.shown !== key) { e.shown = key; e.stack.innerHTML = stackHtml(bet, 5, won); }
+  e.amt.classList.toggle('hidden', !(bet + won));
+  e.amt.classList.toggle('won', !!won);
+  e.amt.textContent = shortNum(bet + won);
+  e.amt.title = fmt(bet + won);
+}
+// what lies on a side circle: the bet while betting, and a winning side bet with its winnings stacked on top until the
+// round is paid (then it all goes to the player with the main bet)
+function sideShown(st, s, k) {
+  const r = st.phase !== 'settle' && s.side_results && s.side_results.find((x) => x.bet === k && x.win);
+  return r ? [r.stake, r.payout - r.stake] : s.side[k];
 }
 
 // where the chips you tap go: the main bet or one of the side bets
@@ -652,15 +699,17 @@ function setStack(i, amount) {
 // draws a state as it is, without animation (used after each animation, and on the first look at a table)
 function renderStatic(st, opts = {}) {
   if (!st) return;
-  const key = `${st.id}|${st.max}|${st.you}`;
+  const key = `${st.id}|${st.max}`;
   if (key !== layoutKey) buildTable(st);
-  const seated = st.you >= 0;
+  const mine = st.mine || [];
+  const more = mine.length < ((W && W.max_each) || 1);
   st.seats.forEach((s, i) => {
     const e = spotEls[i];
     if (!e) return;
     e.root.classList.toggle('vacant', !s);
     e.plate.classList.toggle('hidden', !s);
-    e.sit.classList.toggle('hidden', !!s || seated);
+    e.sit.classList.toggle('hidden', !!s || !more);
+    if (!s) e.sit.textContent = mine.length ? '+ SEAT' : 'SIT';
     if (!s) {
       setStack(i, 0); SIDE.forEach((k) => setSideStack(i, k, 0));
       e.root.className = 'spot vacant'; e.id = null; return;
@@ -668,10 +717,13 @@ function renderStatic(st, opts = {}) {
     if (e.id !== s.id) {
       e.id = s.id;
       e.ring.innerHTML = avatarHtml(s);
-      e.nm.textContent = s.name + (i === st.you ? ' (you)' : '');
     }
+    const name = s.name + (mine.includes(i) ? ' (you)' : '');
+    if (e.nm.textContent !== name) e.nm.textContent = name;
     const turn = st.turn && st.turn.seat === i;
-    e.root.classList.toggle('mine', i === st.you);
+    e.root.classList.toggle('mine', mine.includes(i));
+    e.root.classList.toggle('focus', mine.length > 1 && i === st.you);
+    e.unsit.classList.toggle('hidden', !(mine.length > 1 && mine.includes(i) && !s.leaving && (st.phase === 'betting' || !s.hands.length)));
     e.root.classList.toggle('turn', !!turn);
     e.root.classList.toggle('ready', st.phase === 'betting' && s.ready);
     e.root.classList.toggle('offline', !s.online);
@@ -692,7 +744,7 @@ function renderStatic(st, opts = {}) {
     setStack(i, shown);
     for (const k of SIDE) {
       const o = opts.sides && opts.sides[i];
-      setSideStack(i, k, o && o[k] !== undefined ? o[k] : s.side[k]);
+      setSideStack(i, k, o && o[k] !== undefined ? o[k] : sideShown(st, s, k));
       e.sides[k].root.classList.toggle('target', i === st.you && st.phase === 'betting' && target === k);
     }
     e.root.classList.toggle('target-main', i === st.you && st.phase === 'betting' && target === 'main');
@@ -740,7 +792,7 @@ function renderControls(st) {
       chipKey = k;
       $('chipPick').innerHTML = vals.map((v) => `<button data-v="${v}" title="${fmt(v)}">${chipHtml(v, shortNum(v))}</button>`).join('');
       $('chipPick').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
-        unlock(); sfx.chips(2); send({ type: 'bet', amount: Number(b.dataset.v), spot: target });
+        unlock(); sfx.chips(2); send({ type: 'bet', amount: Number(b.dataset.v), spot: target, seat: T ? T.you : undefined });
       }));
     }
     // side bets need a main bet, and can be at most as big as it (a bigger chip is cut down to fit)
@@ -751,14 +803,16 @@ function renderControls(st) {
         : !me.bet || sideRoom <= 0 || Math.min(v, sideRoom) > balance;
     });
     $('betTarget').querySelectorAll('button').forEach((b) => { if (b.dataset.t !== 'main') b.classList.toggle('dim', !me.bet); });
-    const sides = me.side.pp + me.side.t3;
-    const lastAll = me.last_bet + (me.last_side ? me.last_side.pp + me.last_side.t3 : 0);
-    $('clearBtn').disabled = !me.bet && !sides;
-    $('rebetBtn').disabled = !!me.bet || !me.last_bet || Math.min(lastAll, st.max_bet * 3) > balance;
-    $('rebetBtn').innerHTML = me.last_bet && !me.bet ? `Rebet <small>${amt(lastAll)}</small>` : 'Rebet';
-    $('x2Btn').disabled = !me.bet || me.bet >= st.max_bet || me.bet + sides > balance;
-    $('dealBtn').disabled = !me.bet || me.ready;
-    $('dealBtn').textContent = me.ready ? 'Ready ✓' : 'Deal';
+    const all = myBets(st);
+    const lastAll = all.rebet.reduce((a, s) => a + Math.min(s.last_bet, st.max_bet)
+      + (s.last_side ? Math.min(s.last_side.pp, s.last_bet) + Math.min(s.last_side.t3, s.last_bet) : 0), 0);
+    const doubling = all.seats.filter((s) => s.bet && s.bet < st.max_bet);
+    $('clearBtn').disabled = !all.any && !all.sides;
+    $('rebetBtn').disabled = !all.rebet.length || lastAll > balance;
+    $('rebetBtn').innerHTML = all.rebet.length ? `Rebet <small>${amt(lastAll)}</small>` : 'Rebet';
+    $('x2Btn').disabled = !doubling.length || doubling.reduce((a, s) => a + s.bet + s.side.pp + s.side.t3, 0) > balance;
+    $('dealBtn').disabled = !all.any || all.ready;
+    $('dealBtn').textContent = all.ready ? 'Ready ✓' : 'Deal';
   } else if (myTurn) {
     const h = me.hands[st.turn.hand];
     $('myTotal').textContent = h ? (me.hands.length > 1 ? `Hand ${st.turn.hand + 1}: ` : '') + (h.soft ? `${h.total - 10}/${h.total}` : h.total) : '';
@@ -894,7 +948,7 @@ async function showState(st) {
   $('room').classList.add('hidden'); $('tableView').classList.remove('hidden');
   $('chatBtn').classList.toggle('hidden', !W || !W.emotes);
   const prev = T;
-  const sameTable = prev && prev.id === st.id && layoutKey === `${st.id}|${st.max}|${st.you}`;
+  const sameTable = prev && prev.id === st.id && layoutKey === `${st.id}|${st.max}`;
   // no animation when it can't be seen (the window is in the background: browsers pause animations there, so the
   // table would fall behind), when many states are waiting, or when switching tables
   if (!sameTable || pending > 3 || document.hidden || st.seq <= (prev ? prev.seq : 0)) {
@@ -1044,7 +1098,7 @@ async function animSide(prev, st, ev) {
     area.appendChild(f);
     setTimeout(() => f.remove(), 2600);
   }
-  const mine = wins.filter((r) => r.seat === st.you);
+  const mine = wins.filter((r) => isMine(st, r.seat));
   if (mine.length) {
     const best = mine.reduce((a, r) => (r.mult > a.mult ? r : a));
     banner(best.name.toUpperCase());
@@ -1061,21 +1115,14 @@ async function animSide(prev, st, ev) {
   }
   if (flights.length) { sfx.sweep(); await Promise.all(flights); pulseRack(); }
   if (!wins.length) return;
-  // winnings out of the rack onto the side circles…
+  // the winnings come out of the rack and are stacked on top of the side bet; they stay there until the round is paid
   flights = wins.filter((r) => spotEls[r.seat]).map((r) =>
     flyEl(chipPile(r.payout - r.stake, 5), G.rack, sideOf(r.seat, r.bet), 560, { arc: 20 })
-      .then(() => setSideStack(r.seat, r.bet, r.payout)));
+      .then(() => { setSideStack(r.seat, r.bet, [r.stake, r.payout - r.stake]); float(r.seat, `+${fmt(r.payout - r.stake)}`); }));
   sfx.chips(8);
   await Promise.all(flights);
+  if (mine.length) sfx.win(true);
   await sleep(350);
-  // …and then to the players
-  flights = wins.filter((r) => spotEls[r.seat]).map((r) => {
-    setSideStack(r.seat, r.bet, 0);
-    float(r.seat, `+${fmt(r.payout - r.stake)}`);
-    return flyEl(chipPile(r.payout, 5), sideOf(r.seat, r.bet), plateOf(r.seat), 480);
-  });
-  if (mine.length) { sfx.win(true); coinShower(st.you, 22); }
-  await Promise.all(flights);
 }
 async function animShuffle() {
   const shoe = $('shoe');
@@ -1110,9 +1157,10 @@ async function animDeal(prev, st) {
 }
 async function animNaturals(prev, st, ev) {
   renderStatic(st);
-  if (ev.seats.includes(st.you)) { banner('BLACKJACK!'); sfx.blackjack(); coinShower(st.you, 14); }
+  const mineBj = ev.seats.filter((i) => isMine(st, i));
+  if (mineBj.length) { banner('BLACKJACK!'); sfx.blackjack(); mineBj.forEach((i) => coinShower(i, 14)); }
   else sfx.reveal();
-  const names = ev.seats.filter((i) => st.seats[i]).map((i) => speakName(st.seats[i].name));
+  const names = [...new Set(ev.seats.filter((i) => st.seats[i]).map((i) => speakName(st.seats[i].name)))];
   if (names.length) say(`Blackjack for ${list(names)}!`);
   await sleep(700);
 }
@@ -1128,7 +1176,7 @@ async function bustAway(prev, st, ev) {
   const i = ev.seat;
   renderStatic(st, { stacks: { [i]: (prev.seats[i] ? prev.seats[i].bet : 0) + (ev.kind === 'double' ? ev.amount : 0) } });
   sfx.bust();
-  if (i === st.you) banner('BUST', 'bad');
+  if (isMine(st, i)) banner('BUST', 'bad');
   await sleep(450);
   const h = st.seats[i] && st.seats[i].hands[ev.hand];
   setStack(i, st.seats[i] ? st.seats[i].bet : 0);
@@ -1198,7 +1246,14 @@ async function animDealerCard(prev, st, ev) {
 function settleSpeech(st) {
   const d = st.dealer;
   let text = d.blackjack || d.total > 21 ? '' : `Dealer has ${d.total}. `;
-  const players = st.seats.map((s, i) => [s, i]).filter(([s]) => s && s.hands.length);
+  const byPlayer = new Map();
+  for (const s of st.seats) {
+    if (!s || !s.hands.length) continue;
+    const p = byPlayer.get(s.id) || { name: s.name, won: 0, staked: 0 };
+    p.won += s.won; p.staked += s.staked;
+    byPlayer.set(s.id, p);
+  }
+  const players = [...byPlayer.values()].map((p) => [p]);
   const winners = players.filter(([s]) => s.won > s.staked);
   if (!players.length) return '';
   if (!winners.length) {
@@ -1216,12 +1271,21 @@ function settleSpeech(st) {
 // the payout: stamps on every hand, losing bets go to the rack, winnings come out of it, then everything on the
 // circles goes to the players
 async function animSettle(prev, st, ev) {
-  const stacks = {};
-  st.seats.forEach((s, i) => { if (s && prev.seats[i]) stacks[i] = prev.seats[i].bet; });
-  renderStatic(st, { stacks });
+  const stacks = {}, sides = {}, sideWins = [];
+  st.seats.forEach((s, i) => {
+    const was = prev.seats[i];
+    if (!s || !was) return;
+    stacks[i] = was.bet;
+    sides[i] = {};
+    for (const k of SIDE) {
+      sides[i][k] = sideShown(prev, was, k);
+      if (Array.isArray(sides[i][k])) sideWins.push([i, k, sides[i][k][0] + sides[i][k][1]]);
+    }
+  });
+  renderStatic(st, { stacks, sides });
   const bySeat = {};
   for (const p of ev.payouts || []) (bySeat[p.seat] = bySeat[p.seat] || []).push(p);
-  const mine = bySeat[st.you] || [];
+  const mine = Object.entries(bySeat).filter(([i]) => isMine(st, Number(i))).flatMap(([, ps]) => ps);
   const myNet = mine.reduce((a, p) => a + p.payout - p.stake, 0);
   if (mine.length) {
     if (mine.some((p) => p.result === 'blackjack' || p.result === 'win')) sfx.reveal();
@@ -1266,11 +1330,17 @@ async function animSettle(prev, st, ev) {
     else if (net < 0) float(i, `−${fmt(-net)}`, 'bad');
     else float(i, 'PUSH', 'push');
   }
+  for (const [i, k, total] of sideWins) {
+    if (!spotEls[i]) continue;
+    setSideStack(i, k, 0);
+    flights.push(flyEl(chipPile(total, 5), sideOf(i, k), plateOf(i), 480));
+  }
   if (mine.length) {
     if (myNet > 0) {
       const big = mine.some((p) => p.result === 'blackjack') || myNet >= st.min_bet * 5;
       sfx.win(big);
-      coinShower(st.you, big ? 30 : 16);
+      const won = new Set(mine.filter((p) => p.payout > p.stake).map((p) => p.seat));
+      won.forEach((i) => coinShower(i, (big ? 30 : 16) / won.size + 4));
       if (big && !mine.some((p) => p.result === 'blackjack')) banner(`+${shortNum(myNet)}`);
     } else if (myNet < 0) sfx.lose();
   }

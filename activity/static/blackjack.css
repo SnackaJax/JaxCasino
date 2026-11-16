@@ -199,6 +199,14 @@ body.discord-mobile #app { padding-top: max(env(safe-area-inset-top), var(--disc
   border: 2px solid rgba(255, 226, 140, .5); background: radial-gradient(circle, rgba(255,255,255,.06), rgba(0,0,0,.12));
   box-shadow: inset 0 0 0 4px rgba(0,0,0,.08); transition: border-color .2s, box-shadow .2s; }
 .spot.mine .circle { border-color: rgba(255, 240, 184, .9); }
+/* with more than one seat: tap a circle or plate to bet there; the seat in focus has a brighter plate */
+.spot.mine .circle { pointer-events: auto; cursor: pointer; }
+.spot.mine .plate { cursor: pointer; }
+.spot.focus .plate { border-color: var(--gold2); box-shadow: 0 0 12px rgba(232, 189, 87, .45); }
+.unsit { flex: none; width: 20px; height: 20px; margin-right: -4px; border-radius: 50%; border: 1px solid rgba(255,255,255,.3);
+  background: rgba(255,255,255,.08); color: var(--muted); font-size: 13px; line-height: 1; padding: 0; cursor: pointer; }
+.unsit:hover { background: var(--bad); color: #fff; border-color: var(--bad); }
+.compact .unsit { width: 16px; height: 16px; font-size: 11px; margin-right: -3px; }
 .spot.ready .circle { border-color: var(--good); box-shadow: 0 0 14px rgba(74, 222, 128, .5); }
 .spot.turn .circle { border-color: var(--gold); box-shadow: 0 0 18px rgba(232, 189, 87, .7); }
 .spot.vacant .circle { border-style: dashed; border-color: rgba(255,255,255,.22); }
@@ -215,6 +223,7 @@ body.discord-mobile #app { padding-top: max(env(safe-area-inset-top), var(--disc
 .side-spot .stack { left: 50%; top: 45%; }
 .side-spot .side-amt { position: absolute; left: 50%; bottom: -9px; transform: translateX(-50%); font-size: 9px; font-weight: 900;
   background: rgba(0,0,0,.65); padding: 0 4px; border-radius: 99px; white-space: nowrap; }
+.side-spot .side-amt.won { background: linear-gradient(180deg, #f6d36b, #c8952c); color: #2b1a00; }
 .side-tag { position: absolute; transform: translate(-50%, -50%); z-index: 9; pointer-events: none; white-space: nowrap; font-weight: 900;
   font-size: 11px; padding: 2px 8px; border-radius: 99px; border: 1.5px solid; animation: sidetag 2.6s ease forwards; text-align: center; }
 .side-tag b { margin-left: 5px; }

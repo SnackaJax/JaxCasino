@@ -24,8 +24,10 @@ Websocket /ws/blackjack. The page sends:
   {"type": "join", "session", "instance_id", "guild_id"}     first message
   {"type": "create", "min_bet": int, "max_players": int}    open a table and sit at it
   {"type": "watch", "table": id | null}                     look at a table (or back to the room list)
-  {"type": "sit", "seat": int | null} / {"type": "leave"}    at the table you're watching
-  {"type": "bet", "amount": int, "spot": "main"|"pp"|"t3"} / "clear" / "rebet" / "double_bet" / "ready"
+  {"type": "sit", "seat": int | null} / {"type": "leave", "seat"?}   at the table you're watching
+  {"type": "bet", "amount": int, "spot": "main"|"pp"|"t3", "seat"?} / "clear" / "rebet" / "double_bet" / "ready"
+A player can sit at up to MAX_SEATS_EACH seats of one table, each with its own bets and hands. "seat" picks which of
+their seats a message is for; without it, "bet" goes to their first seat and the others are for all their seats.
   {"type": "act", "action": "hit"|"stand"|"double"|"split"}                         on your turn
   {"type": "chat", "id": int}                               a quick chat (an emote or a phrase from QUICK_CHATS)
 The server sends "welcome", "room" (the list of tables), "table" (the table you're watching, with an "event"
@@ -60,6 +62,7 @@ SIT_OUT_LIMIT = 5             # rounds in a row without a bet before a player is
 OFFLINE_GRACE = 60            # seconds a player who closed the Activity keeps an empty seat (no bet) between rounds
 MAX_TABLES = 8                # per server
 MAX_SEATS = 7
+MAX_SEATS_EACH = 3            # seats one player can take at the same table
 MAX_BET_MULT = 100            # a table's maximum bet is this many times its minimum
 MAX_MESSAGES_PER_SECOND = 12
 # pauses, so the page can animate each step
@@ -145,7 +148,7 @@ class Hand:
                 "payout": self.payout}
 
 
-@dataclass
+@dataclass(eq=False)          # seats are told apart by identity: one player's seats can look the same
 class Seat:
     user_id: int
     name: str
@@ -215,7 +218,11 @@ class Table:
         return [(i, s) for i, s in self.seated() if s.hands]
 
     def seat_of(self, user_id: int) -> Seat | None:
+        """The player's first seat at this table (from the dealer's left)."""
         return next((s for _, s in self.seated() if s.user_id == user_id), None)
+
+    def seats_of(self, user_id: int) -> list[Seat]:
+        return [s for _, s in self.seated() if s.user_id == user_id]
 
     def index_of(self, seat: Seat) -> int:
         return self.seats.index(seat)
@@ -292,16 +299,16 @@ class Table:
                       "blackjack": not self.hole_hidden and is_blackjack(self.dealer)}
         else:
             dealer = {"cards": [], "total": 0, "soft": False, "blackjack": False}
-        me = self.seat_of(user_id)
-        you = self.index_of(me) if me else -1
+        mine = [i for i, s in self.seated() if s.user_id == user_id]
         out = {"type": "table", "id": self.id, "name": self.name, "host": str(self.host_id),
                "min_bet": self.min_bet, "max_bet": self.max_bet, "max": self.max_players, "phase": self.phase,
                "round": self.round_no, "seats": seats, "dealer": dealer,
                "turn": {"seat": self.turn[0], "hand": self.turn[1]} if self.turn and self.phase == "playing" else None,
-               "deadline": int(self.deadline * 1000), "you": you, "log": self.log[-14:], "result": self.result,
+               "deadline": int(self.deadline * 1000), "you": mine[0] if mine else -1, "mine": mine, "log": self.log[-14:], "result": self.result,
                "event": self.event, "seq": self.seq, "bet_time": BET_TIME, "turn_time": TURN_TIME,
                "shoe": len(self.shoe), "shoe_size": DECKS * 52}
-        if me and self.turn and self.phase == "playing" and self.seats[self.turn[0]] is me:
+        me = self.seats[self.turn[0]] if self.turn and self.phase == "playing" else None
+        if me and me.user_id == user_id:
             h = me.hands[self.turn[1]]
             two = len(h.cards) == 2 and not h.done
             out["can_double"] = two
@@ -320,9 +327,11 @@ class Table:
     async def add_player(self, user_id: int, name: str, avatar: bool, spot) -> None:
         if self.phase == "closed":
             raise Rejected("This table is closed.")
-        if self.seat_of(user_id):
-            raise Rejected("You're already at this table.")
-        if self.room.table_of(user_id):
+        mine = len(self.seats_of(user_id))
+        if mine >= MAX_SEATS_EACH:
+            raise Rejected(f"You can sit at up to {MAX_SEATS_EACH} seats of a table.")
+        other = self.room.table_of(user_id)
+        if other and other is not self:
             raise Rejected("You're already sitting at another table. Leave it first.")
         free = [i for i, s in enumerate(self.seats) if s is None]
         if not free:
@@ -332,7 +341,7 @@ class Table:
         if not isinstance(spot, int) or isinstance(spot, bool) or spot not in free:
             raise Rejected("That seat is taken.")
         self.seats[spot] = Seat(user_id, name, avatar)
-        self.note(f"{name} sat down")
+        self.note(f"{name} takes another seat" if mine else f"{name} sat down")
         await self.room.push_me(user_id)
 
     async def remove(self, seat: Seat, reason: str = "") -> None:
@@ -342,11 +351,20 @@ class Table:
         seat.wager = None
         i = self.index_of(seat)
         self.seats[i] = None
-        self.note(reason or f"{seat.name} left")
-        if seat.user_id == self.host_id and self.seated():
+        self.note(reason or (f"{seat.name} left a seat" if self.seat_of(seat.user_id) else f"{seat.name} left"))
+        if seat.user_id == self.host_id and self.seated() and not self.seat_of(seat.user_id):
             self.host_id = self.seated()[0][1].user_id
         await self.room.push_me(seat.user_id)
         log.info("Blackjack (Activity): user %s left table %s", seat.user_id, self.id)
+
+    async def leave_seats(self, seats: list[Seat]) -> str:
+        """Leaves some of one player's seats: at once when nothing is in play there, else after the round."""
+        texts = [await self.request_leave(s) for s in seats if s in self.seats and self.phase != "closed"]
+        if len(texts) == 1:
+            return texts[0]
+        if any("once this round is paid" in t for t in texts):
+            return "Your hands stand, and you'll leave the table once this round is paid."
+        return "You left the table."
 
     async def request_leave(self, seat: Seat) -> str:
         if seat.hands and self.phase != "betting":
@@ -435,19 +453,21 @@ class Table:
         await self.push({"kind": "unbet", "seat": self.index_of(seat), "amounts": amounts})
         await self.room.push_me(seat.user_id)
 
-    async def set_ready(self, seat: Seat) -> None:
+    async def set_ready(self, seats: list[Seat]) -> None:
+        """Deal: the player is done betting, on all their seats (one without a bet sits this round out)."""
         if self.phase != "betting":
             raise Rejected("The cards are already out.")
-        if seat.bet < self.min_bet:
+        if not any(s.bet >= self.min_bet for s in seats):
             raise Rejected("Place a bet first.")
-        seat.ready = True
+        for s in seats:
+            s.ready = True
         if not await self.maybe_start():
             await self.push()
 
     async def maybe_start(self) -> bool:
         """Deals straight away once everyone seated has bet and pressed Deal."""
         active = [s for _, s in self.seated() if not s.leaving]
-        if self.phase == "betting" and active and all(s.bet and s.ready for s in active):
+        if self.phase == "betting" and any(s.bet for s in active) and all(s.ready for s in active):
             self.begin_round()
             return True
         return False
@@ -778,11 +798,12 @@ class Table:
 
     async def drop_if_away(self, user_id: int) -> None:
         """A player closed the Activity while holding a seat with nothing on it: free the seat after a while."""
-        s = self.seat_of(user_id)
-        if (s is None or s.hands or s.bet or s.offline_since is None
-                or time.time() - s.offline_since < OFFLINE_GRACE):
+        gone = [s for s in self.seats_of(user_id) if not s.hands and not s.bet and s.offline_since is not None
+                and time.time() - s.offline_since >= OFFLINE_GRACE]
+        if not gone:
             return
-        await self.remove(s, f"{s.name} left (away)")
+        for s in gone:
+            await self.remove(s, f"{s.name} left (away)")
         if not self.seated():
             await self.close()
         else:
@@ -919,11 +940,18 @@ class Room:
                     await t.add_player(v.user_id, v.name, v.avatar, msg.get("seat"))
                     await t.push({"kind": "sit"})
                     return
-                seat = t.seat_of(v.user_id)
-                if seat is None:
+                seats = t.seats_of(v.user_id)
+                if not seats:
                     raise Rejected("You're not sitting at this table.")
+                pick = msg.get("seat")
+                if pick is not None:
+                    if (not isinstance(pick, int) or isinstance(pick, bool) or not 0 <= pick < len(t.seats)
+                            or t.seats[pick] not in seats):
+                        raise Rejected("That's not your seat.")
+                    seats = [t.seats[pick]]
+                seat = seats[0]
                 if kind == "leave":
-                    text = await t.request_leave(seat)
+                    text = await t.leave_seats(seats)
                     await self.to_user(v.user_id, {"type": "notice", "message": text})
                 elif kind == "bet":
                     amount, spot = msg.get("amount"), msg.get("spot", "main")
@@ -933,25 +961,43 @@ class Room:
                         raise Rejected("Invalid bet.")
                     await t.place_bets(seat, {spot: amount})
                 elif kind == "clear":
-                    await t.clear_bet(seat)
+                    for s in seats:
+                        await t.clear_bet(s)
                 elif kind == "rebet":
-                    if seat.bet or seat.side_total:
-                        raise Rejected("You already have a bet out. Clear it first, or use ×2.")
-                    if not seat.last_bet:
-                        raise Rejected("There's no bet to repeat yet.")
-                    main = min(seat.last_bet, t.max_bet)
-                    await t.place_bets(seat, {"main": main, **{k: min(v, main) for k, v in seat.last_side.items()}})
+                    todo = [s for s in seats if s.last_bet and not s.bet and not s.side_total]
+                    if not todo:
+                        raise Rejected("You already have a bet out. Clear it first, or use ×2." if any(
+                            s.bet or s.side_total for s in seats) else "There's no bet to repeat yet.")
+                    await self.each(t, todo, lambda s: t.place_bets(s, {
+                        "main": min(s.last_bet, t.max_bet),
+                        **{k: min(x, s.last_bet, t.max_bet) for k, x in s.last_side.items()}}))
                 elif kind == "double_bet":
-                    if not seat.bet:
+                    todo = [s for s in seats if s.bet]
+                    if not todo:
                         raise Rejected("Place a bet first.")
-                    await t.place_bets(seat, {"main": seat.bet, **seat.side})
+                    await self.each(t, todo, lambda s: t.place_bets(s, {"main": s.bet, **s.side}))
                 elif kind == "ready":
-                    await t.set_ready(seat)
+                    await t.set_ready(seats)
                 else:
                     action = msg.get("action")
                     if action not in ("hit", "stand", "double", "split"):
                         raise Rejected("Invalid action.")
                     await t.act(v.user_id, action)
+
+    @staticmethod
+    async def each(t: Table, seats: list[Seat], do) -> None:
+        """Does the same on several of a player's seats; an error only when it worked on none of them."""
+        problem, done = None, False
+        for s in seats:
+            if s not in t.seats:
+                continue
+            try:
+                await do(s)
+                done = True
+            except Rejected as e:
+                problem = problem or e
+        if problem and not done:
+            raise problem
 
     async def chat(self, v: Viewer, chat_id) -> None:
         """A quick chat to everyone looking at the table: over the player's seat, or (for someone watching) under
@@ -974,10 +1020,11 @@ class Room:
 
     def set_online(self, user_id: int, online: bool) -> None:
         t = self.table_of(user_id)
-        s = t.seat_of(user_id) if t else None
-        if s is None:
+        seats = t.seats_of(user_id) if t else []
+        if not seats:
             return
-        s.offline_since = None if online else time.time()
+        for s in seats:
+            s.offline_since = None if online else time.time()
         if not online:
             asyncio.create_task(self._drop_later(t, user_id))
 
@@ -1008,6 +1055,7 @@ class BlackjackHub:
         s = self.server.settings
         return {"type": "welcome", "you": str(user_id), "min_bet": s.min_bet, "max_bet": s.max_bet,
                 "bet_time": BET_TIME, "turn_time": TURN_TIME, "max_tables": MAX_TABLES, "max_seats": MAX_SEATS,
+                "max_each": MAX_SEATS_EACH,
                 "max_mult": MAX_BET_MULT, "decks": DECKS, "max_hands": MAX_HANDS,
                 "side_pays": {"pp": PP_PAYS, "t3": T3_PAYS}, "side_names": SIDE_NAMES,
                 "server_voice": self.server.voice.available, "emotes": EMOTES, "phrases": PHRASES}

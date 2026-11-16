@@ -243,3 +243,9 @@ Bets are held in escrow like every other game (refunded if the bot restarts mid-
 - **Logs:** the console shows every command, bet result and error. `logs/gamblebot.log` keeps more detail, including every button press, and rotates at 5 MB (5 old files kept). If a game misbehaves, that file shows what was clicked and what went wrong. If a button handler crashes, the player is told something went wrong and the full error is logged.
 - **Randomness:** every game uses the operating system's cryptographically secure random generator.
 - **Data:** everything is stored in `gamble.db` (SQLite). Balances are per server. Every finished game and every claim, payment and admin change is also logged with a timestamp for `/serverstats`. Every balance change is also recorded (by a database trigger) for the `/stats` graph. When that recording was first switched on, earlier balances were rebuilt from the game and money logs; that part is approximate, because payments received from others weren't logged per player back then.
+
+## License
+GambleBot is released under the [MIT License](LICENSE). Bundled third-party files keep their own licenses: the
+Discord Embedded App SDK in `activity/static/vendor/discord-sdk/` (MIT, see its `LICENSE.md`) and the Cinzel and
+Manrope fonts in `activity/static/fonts/` (SIL Open Font License, see the `OFL-*.txt` files). The dealer's voice
+models are downloaded separately and come with their own licenses.

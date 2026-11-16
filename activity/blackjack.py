@@ -26,7 +26,7 @@ Websocket /ws/blackjack. The page sends:
   {"type": "watch", "table": id | null}                     look at a table (or back to the room list)
   {"type": "sit", "seat": int | null} / {"type": "leave", "seat"?}   at the table you're watching
   {"type": "bet", "amount": int, "spot": "main"|"pp"|"t3", "seat"?} / "clear" / "rebet" / "double_bet" / "ready"
-A player can sit at up to MAX_SEATS_EACH seats of one table, each with its own bets and hands. "seat" picks which of
+A player can sit at any number of the free seats of a table, each with its own bets and hands. "seat" picks which of
 their seats a message is for; without it, "bet" goes to their first seat and the others are for all their seats.
   {"type": "act", "action": "hit"|"stand"|"double"|"split"}                         on your turn
   {"type": "chat", "id": int}                               a quick chat (an emote or a phrase from QUICK_CHATS)
@@ -62,7 +62,7 @@ SIT_OUT_LIMIT = 5             # rounds in a row without a bet before a player is
 OFFLINE_GRACE = 60            # seconds a player who closed the Activity keeps an empty seat (no bet) between rounds
 MAX_TABLES = 8                # per server
 MAX_SEATS = 7
-MAX_SEATS_EACH = 3            # seats one player can take at the same table
+MAX_SEATS_EACH = MAX_SEATS    # seats one player can take at the same table (no limit: every free one)
 MAX_BET_MULT = 100            # a table's maximum bet is this many times its minimum
 MAX_MESSAGES_PER_SECOND = 12
 # pauses, so the page can animate each step

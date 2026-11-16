@@ -277,7 +277,7 @@ function setupInfo() {
       <li>${W.decks}-deck shoe. The dealer stands on all 17s. A win pays 1:1, blackjack pays 3:2, a tie is a push (your
       bet comes back). When the dealer has blackjack, the round ends straight away.</li>
       <li>Anyone in the server can watch a table. A seat with no bet for a few rounds in a row is given up.</li>
-      <li>You can play up to ${W.max_each || 1} seats at once: tap <b>+ SEAT</b> on an empty one. Tap one of your seats
+      <li>You can play more than one seat: tap <b>+ SEAT</b> on any empty one. Tap one of your seats
       to put your chips there. <b>Clear</b>, <b>Rebet</b>, <b>×2</b> and <b>Deal</b> work on all your seats; × on a
       seat leaves just that one.</li>
       <li>💬 at the top: quick chats and emotes for everyone at the table.</li>

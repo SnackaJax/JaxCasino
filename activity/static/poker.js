@@ -129,24 +129,46 @@ function renderForm() {
   $('seatPick').querySelectorAll('button').forEach((b) => b.classList.toggle('on', Number(b.dataset.n) === seatsWanted));
   $('createBtn').disabled = buyIn > balance;
 }
+// The tables in the room list, kept by id: the list is updated in place (the room list comes again on every bet and
+// card at any table), so only a table that just opened fades in.
+const tableCards = new Map();
+function syncTables(host, list, cardHtml, emptyHtml) {
+  const keep = new Set(list.map((t) => t.id));
+  for (const [id, el] of tableCards) if (!keep.has(id)) { el.remove(); tableCards.delete(id); }
+  for (const c of [...host.children]) if (!c._table && !(c.classList.contains('empty') && !list.length)) c.remove();
+  if (!list.length && !host.children.length) host.innerHTML = emptyHtml;
+  list.forEach((t, n) => {
+    let el = tableCards.get(t.id);
+    if (!el) {
+      el = document.createElement('div');
+      el.className = 'table-card';
+      el._table = t.id;
+      el.addEventListener('click', (e) => {
+        const b = e.target.closest('button');
+        if (!b || b.disabled) return;
+        unlock(); sfx.click();
+        send({ type: 'watch', table: el._table });
+        if (b.dataset.sit !== undefined) send({ type: 'sit' });
+      });
+      tableCards.set(t.id, el);
+    }
+    const html = cardHtml(t);
+    if (el._html !== html) { el._html = html; el.innerHTML = html; }
+    if (host.children[n] !== el) host.insertBefore(el, host.children[n] || null);
+  });
+}
 function renderRoom() {
   const list = room.tables;
-  $('tables').innerHTML = list.length ? list.map((t) => {
+  syncTables($('tables'), list, (t) => {
     const live = t.phase === 'playing' || t.phase === 'between';
     const full = t.seated >= t.max;
-    return `<div class="table-card"><div class="tstatus ${live ? 'live' : ''}">${live ? `LIVE · hand ${t.hand}` : 'WAITING'}</div>
+    return `<div class="tstatus ${live ? 'live' : ''}">${live ? `LIVE · hand ${t.hand}` : 'WAITING'}</div>
       <div class="tname">${esc(t.name)}</div>
       <div class="tmeta">Buy-in <b>${fmt(t.buy_in)}</b> · blinds ${fmt(t.sb)}/${fmt(t.bb)} · ${t.seated}/${t.max} seats</div>
       <div class="tplayers">${esc(t.players.join(', '))}</div>
       <div class="tbtns"><button class="btn" data-watch="${t.id}">Watch</button>
-      <button class="btn btn-gold" data-sit="${t.id}" ${full || t.buy_in > balance ? 'disabled' : ''}>${full ? 'Full' : `Sit down · ${fmt(t.buy_in)}`}</button></div></div>`;
-  }).join('') : '<div class="empty">No tables open yet. Open one and invite the others!</div>';
-  $('tables').querySelectorAll('[data-watch]').forEach((b) => b.addEventListener('click', () => {
-    unlock(); sfx.click(); send({ type: 'watch', table: Number(b.dataset.watch) });
-  }));
-  $('tables').querySelectorAll('[data-sit]').forEach((b) => b.addEventListener('click', () => {
-    unlock(); sfx.click(); send({ type: 'watch', table: Number(b.dataset.sit) }); send({ type: 'sit' });
-  }));
+      <button class="btn btn-gold" data-sit="${t.id}" ${full || t.buy_in > balance ? 'disabled' : ''}>${full ? 'Full' : `Sit down · ${fmt(t.buy_in)}`}</button></div>`;
+  }, '<div class="empty">No tables open yet. Open one and invite the others!</div>');
   $('roomCount').textContent = `(${room.players.length})`;
   $('people').innerHTML = room.players.map((p) => {
     const t = list.find((x) => x.id === p.table);

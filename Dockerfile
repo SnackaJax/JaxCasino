@@ -1,4 +1,4 @@
-# GambleBot: Python, the bot's libraries and the bot's code.
+# JaxCasino: Python, the bot's libraries and the bot's code.
 #
 # Your settings (.env), the database, logs and voice models are NOT in the image. docker-compose.yml passes .env in
 # as environment variables and keeps the database, logs and voices in volumes, so they survive updates.
@@ -22,10 +22,10 @@ RUN pip install -r requirements.txt
 COPY . .
 
 # Run as a normal user. /data (database and logs) and /app/voices are the folders the bot writes to.
-RUN useradd --create-home --uid 1000 gamblebot \
+RUN useradd --create-home --uid 1000 jaxcasino \
     && mkdir -p /data /app/voices \
-    && chown -R gamblebot:gamblebot /data /app/voices
-USER gamblebot
+    && chown -R jaxcasino:jaxcasino /data /app/voices
+USER jaxcasino
 
 # The Activity's web server (ACTIVITY_PORT)
 EXPOSE 8765

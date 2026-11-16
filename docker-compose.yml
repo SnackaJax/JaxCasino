@@ -1,27 +1,27 @@
-# GambleBot in Docker. Quick start (the full steps are in the README):
+# JaxCasino in Docker. Quick start (the full steps are in the README):
 #
 #   cp .env.example .env                                          then fill in DISCORD_TOKEN and the rest
 #   docker compose up -d --build                                  build and start the bot
-#   docker compose run --rm gamblebot python download_voices.py   optional: the blackjack dealer's voice (~350 MB)
-#   docker compose logs -f gamblebot                              watch it start
+#   docker compose run --rm jaxcasino python download_voices.py   optional: the blackjack dealer's voice (~350 MB)
+#   docker compose logs -f jaxcasino                              watch it start
 #
 # Only run ONE copy of the bot per bot token.
 services:
-  gamblebot:
+  jaxcasino:
     build: .
-    image: gamblebot:latest
+    image: jaxcasino:latest
     restart: unless-stopped
     env_file: .env
     environment:
-      # These override .env: inside the container the database and logs go to the "gamblebot-data" volume, and the
+      # These override .env: inside the container the database and logs go to the "jaxcasino-data" volume, and the
       # Activity's web server has to listen on all interfaces to be reachable from outside the container.
       DATABASE_PATH: /data/gamble.db
       LOG_DIR: /data/logs
       ACTIVITY_HOST: 0.0.0.0
       ACTIVITY_PORT: "8765"
     volumes:
-      - gamblebot-data:/data            # gamble.db and logs/
-      - gamblebot-voices:/app/voices    # the dealer's voice models (download_voices.py)
+      - jaxcasino-data:/data            # gamble.db and logs/
+      - jaxcasino-voices:/app/voices    # the dealer's voice models (download_voices.py)
     ports:
       # The Activity's web server, on this machine only. Point your HTTPS tunnel or reverse proxy at it.
       - "127.0.0.1:8765:8765"
@@ -42,9 +42,9 @@ services:
     image: cloudflare/cloudflared:latest
     profiles: ["tunnel"]
     restart: unless-stopped
-    command: ["tunnel", "--no-autoupdate", "--url", "http://gamblebot:8765"]
+    command: ["tunnel", "--no-autoupdate", "--url", "http://jaxcasino:8765"]
     depends_on:
-      - gamblebot
+      - jaxcasino
     logging:
       driver: json-file
       options:
@@ -52,5 +52,5 @@ services:
         max-file: "3"
 
 volumes:
-  gamblebot-data:
-  gamblebot-voices:
+  jaxcasino-data:
+  jaxcasino-voices:

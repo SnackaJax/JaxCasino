@@ -13,7 +13,7 @@ from utils.economy import fmt
 from utils.stats_image import StatsInfo, render_stats, short
 from utils.views import OwnedView
 
-log = logging.getLogger("gamblebot.serverstats")
+log = logging.getLogger("jaxcasino.serverstats")
 
 GAME_NAMES = {
     "coinflip": "Coinflip", "dice": "Dice", "slots": "Slots", "roulette": "Roulette", "wheel": "Wheel",

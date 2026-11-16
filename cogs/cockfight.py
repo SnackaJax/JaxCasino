@@ -14,7 +14,7 @@ from utils.economy import fmt, result_color, result_line, send_error, take_bet, 
 from utils.rng import rng
 from utils.shop import get_prices, price_text
 
-log = logging.getLogger("gamblebot.cockfight")
+log = logging.getLogger("jaxcasino.cockfight")
 
 BET_DESC = "Any amount (e.g. 1234) or a shortcut: 2.5k, 1m, half, all"
 

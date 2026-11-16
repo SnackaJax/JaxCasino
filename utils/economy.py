@@ -6,7 +6,7 @@ import discord
 
 import config
 
-log = logging.getLogger("gamblebot.bets")
+log = logging.getLogger("jaxcasino.bets")
 
 
 def fmt(amount: int) -> str:

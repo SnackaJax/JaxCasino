@@ -9,7 +9,7 @@ import aiosqlite
 
 import config
 
-log = logging.getLogger("gamblebot.db")
+log = logging.getLogger("jaxcasino.db")
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
@@ -179,7 +179,9 @@ class Database:
             return 0
         line_re = re.compile(r"^(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d)\S*\s.*?/pay user=(\d+) amount=(\S+) by .*\((\d+)\)")
         entries = []   # (local time as if UTC, sender, recipient, raw amount)
-        for path in glob.glob(os.path.join(config.LOG_DIR, "gamblebot.log*")):
+        paths = [*glob.glob(os.path.join(config.LOG_DIR, "jaxcasino.log*")),
+                 *glob.glob(os.path.join(config.LOG_DIR, "gamblebot.log*"))]   # the log's name before the rename
+        for path in paths:
             with open(path, encoding="utf-8", errors="replace") as f:
                 for line in f:
                     if "/pay user=" not in line:

@@ -50,7 +50,7 @@ from cogs.blackjack import MAX_HANDS, card_value, draw_upcard, hand_value, is_bl
 from utils.cards import Card, new_deck
 from utils.economy import Wager
 
-log = logging.getLogger("gamblebot.activity.blackjack")
+log = logging.getLogger("jaxcasino.activity.blackjack")
 
 GAME = "blackjack"            # same game name as the chat version, so /stats and /serverstats add them up
 DECKS = 6
@@ -1070,7 +1070,7 @@ class BlackjackHub:
             if first.type != aiohttp.WSMsgType.TEXT:
                 return ws
             hello = json.loads(first.data)
-            session, guild_id, member, problem = await self.server.admit(hello)
+            session, guild_id, member, problem = await self.server.admit(hello, ws)
             if problem:
                 await ws.send_str(json.dumps({"type": "fatal", "message": problem,
                                               "code": "session" if "session" in problem.lower() else ""}))

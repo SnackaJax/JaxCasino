@@ -16,7 +16,7 @@ from utils.economy import fmt
 from utils.stats_image import short
 from utils.views import OwnedView
 
-log = logging.getLogger("gamblebot.playerstats")
+log = logging.getLogger("jaxcasino.playerstats")
 
 # key: (button label, header label, seconds back or 0 for all time)
 PERIODS = {

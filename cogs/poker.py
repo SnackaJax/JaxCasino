@@ -19,7 +19,7 @@ from utils.hand_eval import best_hand, hand_name
 from utils.rng import rng
 from utils.table_image import SeatInfo, TableInfo, render_hand, render_table
 
-log = logging.getLogger("gamblebot.poker")
+log = logging.getLogger("jaxcasino.poker")
 
 STREET_NAMES = {"preflop": "PRE-FLOP", "flop": "FLOP", "turn": "TURN", "river": "RIVER"}
 

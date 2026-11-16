@@ -1,4 +1,4 @@
-# 🎰 GambleBot
+# 🎰 JaxCasino
 
 > **A hobby project, written by Claude.** All of the code and this README were written by Claude (Anthropic's AI);
 > SnackaJax decides what gets built and tries it out. It's made for fun on a private Discord server: the credits are
@@ -66,17 +66,17 @@ docker compose up -d --build
 ```
 That builds the image and starts the bot in the background. It restarts by itself after a crash or reboot. Watch it start with:
 ```bash
-docker compose logs -f gamblebot
+docker compose logs -f jaxcasino
 ```
 Optional, the live blackjack dealer's voice (about 350 MB; without it the dealer only talks on devices with their own speech voices, which Android's Discord app doesn't have):
 ```bash
-docker compose run --rm gamblebot python download_voices.py
+docker compose run --rm jaxcasino python download_voices.py
 ```
 ```bash
-docker compose restart gamblebot
+docker compose restart jaxcasino
 ```
 What goes where:
-- The database (`gamble.db`) and the log files are kept in the `gamblebot-data` volume, and the voice models in `gamblebot-voices`, so they survive rebuilds and updates.
+- The database (`gamble.db`) and the log files are kept in the `jaxcasino-data` volume, and the voice models in `jaxcasino-voices`, so they survive rebuilds and updates.
 - `docker-compose.yml` sets `DATABASE_PATH`, `LOG_DIR` and `ACTIVITY_HOST` itself, so leave those as they are in `.env`.
 - The Activity's web server is published on `127.0.0.1:8765`: reachable from this machine only, for your tunnel or reverse proxy.
 
@@ -84,7 +84,7 @@ What goes where:
 
 **Backups:** copy the database out of the volume while the bot runs (SQLite in WAL mode, so stop the bot first for a fully consistent copy):
 ```bash
-docker compose cp gamblebot:/data/gamble.db ./gamble-backup.db
+docker compose cp jaxcasino:/data/gamble.db ./gamble-backup.db
 ```
 
 ### 3b. Or run it with Python
@@ -240,12 +240,12 @@ Bets are held in escrow like every other game (refunded if the bot restarts mid-
 - **Poker:** the table is drawn as an image that updates after every action. It shows the seats, chip stacks, bets, the dealer button, who is to act, and everyone's cards at showdown. The **My cards** button shows your hand as an image only you can see. One table per channel. To run several tables at once, create them in different channels or in threads inside the gambling channel. Side pots, split pots and all-in run-outs are handled automatically.
 - **Restart when broke:** when a game leaves a player below the minimum bet, a restart panel tagging them is posted. One press of the button gives them 500 credits, with a confirmation. Broke players who try to bet, or use `/restart`, get the same panel privately. Restarts aren't available while credits are still in an unfinished game, or for a while after sending credits with `/pay` (so nobody can farm them by giving credits away): 3600 seconds (1 hour) by default, set with `RESTART_PAY_BLOCK_SECONDS` in `.env` (`0` turns the lock off). Change the amount with `RESTART_AMOUNT` in `.env`; set `RESTART_PRESSES` above 1 to make players press several times (the panel then counts down).
 - **Finding your game:** every game message tags the player who started it (both players in a duel), so Discord highlights your own games in a busy channel.
-- **Logs:** the console shows every command, bet result and error. `logs/gamblebot.log` keeps more detail, including every button press, and rotates at 5 MB (5 old files kept). If a game misbehaves, that file shows what was clicked and what went wrong. If a button handler crashes, the player is told something went wrong and the full error is logged.
+- **Logs:** the console shows every command, bet result and error. `logs/jaxcasino.log` keeps more detail, including every button press, and rotates at 5 MB (5 old files kept). If a game misbehaves, that file shows what was clicked and what went wrong. If a button handler crashes, the player is told something went wrong and the full error is logged.
 - **Randomness:** every game uses the operating system's cryptographically secure random generator.
 - **Data:** everything is stored in `gamble.db` (SQLite). Balances are per server. Every finished game and every claim, payment and admin change is also logged with a timestamp for `/serverstats`. Every balance change is also recorded (by a database trigger) for the `/stats` graph. When that recording was first switched on, earlier balances were rebuilt from the game and money logs; that part is approximate, because payments received from others weren't logged per player back then.
 
 ## License
-GambleBot is released under the [MIT License](LICENSE). Bundled third-party files keep their own licenses: the
+JaxCasino is released under the [MIT License](LICENSE). Bundled third-party files keep their own licenses: the
 Discord Embedded App SDK in `activity/static/vendor/discord-sdk/` (MIT, see its `LICENSE.md`) and the Cinzel and
 Manrope fonts in `activity/static/fonts/` (SIL Open Font License, see the `OFL-*.txt` files). The dealer's voice
 models are downloaded separately and come with their own licenses.

@@ -9,12 +9,12 @@
 // In the local dev server (python -m activity.devserver) ?user=<n>&name=<name> signs in instead of Discord.
 import { DiscordSDK } from './vendor/discord-sdk/index.mjs';
 
-const RETRY_KEY = 'gamblebot-reauth';
+const RETRY_KEY = 'jaxcasino-reauth';
 
 // The menu page that is showing this game, if any.
 function shell() {
   try {
-    if (window.parent !== window && window.parent.__gamblebot) return window.parent.__gamblebot;
+    if (window.parent !== window && window.parent.__jaxcasino) return window.parent.__jaxcasino;
   } catch (e) { /* not our page */ }
   return null;
 }
@@ -55,7 +55,7 @@ async function signInTop(onStatus) {
 
 // Called by the menu page: makes it the place games get their session from.
 export function becomeShell(handlers) {
-  window.__gamblebot = {
+  window.__jaxcasino = {
     signIn: () => signIn(),
     // the bot restarted and forgot the session: sign in again with the Discord connection we already have
     refresh: () => { current = signInTop(() => {}); return current; },

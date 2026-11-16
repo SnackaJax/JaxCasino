@@ -22,7 +22,7 @@ from utils.rng import rng
 from utils.shop import (ITEMS, PRICE_LABELS, TIMEOUT_DURATIONS, VOICE_DURATIONS, duration_label, get_prices,
                         item_price_text)
 
-log = logging.getLogger("gamblebot.shop")
+log = logging.getLogger("jaxcasino.shop")
 
 MAX_TIMEOUT = dt.timedelta(days=28)  # Discord's limit
 # A random kick that should have fired more than this long ago (the bot was offline) is refunded instead.

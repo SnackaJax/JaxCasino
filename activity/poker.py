@@ -34,7 +34,7 @@ from utils.cards import Card, new_deck
 from utils.hand_eval import best_hand, hand_name
 from utils.rng import rng
 
-log = logging.getLogger("gamblebot.activity.poker")
+log = logging.getLogger("jaxcasino.activity.poker")
 
 GAME = "poker"
 TURN_TIME = 30            # seconds a player has to act
@@ -769,7 +769,7 @@ class PokerHub:
             if first.type != aiohttp.WSMsgType.TEXT:
                 return ws
             hello = json.loads(first.data)
-            session, guild_id, member, problem = await self.server.admit(hello)
+            session, guild_id, member, problem = await self.server.admit(hello, ws)
             if problem:
                 await ws.send_str(json.dumps({"type": "fatal", "message": problem,
                                               "code": "session" if "session" in problem.lower() else ""}))

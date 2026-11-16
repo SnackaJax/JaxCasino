@@ -15,7 +15,7 @@ import config
 from activity.server import ActivityServer, Settings
 from utils.economy import send_error
 
-log = logging.getLogger("gamblebot.spinfrenzy")
+log = logging.getLogger("jaxcasino.spinfrenzy")
 
 # games /casino can open directly (activity.server.GAME_PAGES has their pages)
 GAMES = {"spinfrenzy": "Spin Frenzy", "bangerbash": "Banger Bash", "poker": "Poker", "blackjack": "Blackjack",

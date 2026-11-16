@@ -21,7 +21,7 @@ from utils.rng import rng
 from utils.slot_image import SlotFrame, render, render_paylines
 from utils.views import BaseView
 
-log = logging.getLogger("gamblebot.slots")
+log = logging.getLogger("jaxcasino.slots")
 
 BET_DESC = "Total bet for all 20 lines: any amount (e.g. 1234) or a shortcut: 2.5k, 1m, half, all"
 REEL_STEP = 0.7       # seconds between reel stops

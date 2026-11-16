@@ -11,7 +11,7 @@ import discord
 
 from utils.economy import refund_unposted
 
-log = logging.getLogger("gamblebot.ui")
+log = logging.getLogger("jaxcasino.ui")
 
 
 def describe(interaction: discord.Interaction) -> str:

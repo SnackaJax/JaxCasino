@@ -37,7 +37,7 @@ from utils import banger_engine as E
 from utils.economy import Wager
 from utils.rng import rng
 
-log = logging.getLogger("gamblebot.activity.banger")
+log = logging.getLogger("jaxcasino.activity.banger")
 
 GAME = "bangerbash"
 IDLE_FINISH = 600            # seconds without a choice before an unfinished round finishes itself
@@ -422,7 +422,7 @@ class BangerHub:
         return ws
 
     async def join(self, hello: dict, ws) -> tuple[Table | None, SlotPlayer | None, str | None]:
-        session, guild_id, member, problem = await self.server.admit(hello)
+        session, guild_id, member, problem = await self.server.admit(hello, ws)
         if problem:
             return None, None, problem
         # one lobby per server: the voice-call and text-channel Activities of a server share it

@@ -11,7 +11,7 @@ from utils.rng import rng
 
 import logging
 
-log = logging.getLogger("gamblebot.lottery")
+log = logging.getLogger("jaxcasino.lottery")
 
 
 def winner_tag(winner: int | None) -> dict:

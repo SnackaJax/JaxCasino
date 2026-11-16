@@ -21,7 +21,7 @@ import wave
 from collections import OrderedDict
 from pathlib import Path
 
-log = logging.getLogger("gamblebot.activity.voice")
+log = logging.getLogger("jaxcasino.activity.voice")
 
 MAX_TEXT = 240               # characters in one line
 CACHE_LINES = 400            # lines kept ready (the fixed ones, like "No more bets, thank you", are asked for a lot)

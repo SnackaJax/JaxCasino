@@ -14,7 +14,7 @@ from utils.economy import Wager, fmt, fmt_mult, keep_bet, send_error, take_bet, 
 from utils.views import BaseModal, BaseView
 from utils.rng import rng
 
-log = logging.getLogger("gamblebot.horserace")
+log = logging.getLogger("jaxcasino.horserace")
 
 HORSES = [
     ("🔴", "Crimson Comet"),

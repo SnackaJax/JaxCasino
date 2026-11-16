@@ -13,7 +13,7 @@ import config
 from utils.economy import fmt
 from utils.views import OwnedView
 
-log = logging.getLogger("gamblebot.restart")
+log = logging.getLogger("jaxcasino.restart")
 
 PANEL_TIMEOUT = 15 * 60
 OFFER_DELAY = 1.5   # let the game's own result message show first

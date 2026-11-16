@@ -1,4 +1,4 @@
-"""GambleBot entry point. Run with:  python bot.py"""
+"""JaxCasino entry point. Run with:  python bot.py"""
 import logging
 import logging.handlers
 import os
@@ -13,7 +13,7 @@ from database import Database
 from utils.checks import NotAdmin, WrongChannel
 from utils.economy import refund_unposted, send_error
 
-log = logging.getLogger("gamblebot")
+log = logging.getLogger("jaxcasino")
 
 COGS = [
     "cogs.economy",
@@ -53,7 +53,7 @@ def setup_logging() -> None:
     try:
         os.makedirs(config.LOG_DIR, exist_ok=True)
         file = logging.handlers.RotatingFileHandler(
-            os.path.join(config.LOG_DIR, "gamblebot.log"), maxBytes=5_000_000, backupCount=5, encoding="utf-8")
+            os.path.join(config.LOG_DIR, "jaxcasino.log"), maxBytes=5_000_000, backupCount=5, encoding="utf-8")
         file.setLevel(logging.DEBUG)
         file.setFormatter(formatter)
         handlers.append(file)
@@ -136,7 +136,7 @@ class GambleTree(app_commands.CommandTree):
             pass
 
 
-class GambleBot(commands.Bot):
+class JaxCasino(commands.Bot):
     def __init__(self):
         intents = discord.Intents.default()
         intents.members = True  # needed for /admin give-all and remove-all
@@ -190,7 +190,7 @@ def main() -> None:
         sys.exit(1)
     setup_logging()
     try:
-        GambleBot().run(config.TOKEN, log_handler=None)
+        JaxCasino().run(config.TOKEN, log_handler=None)
     except discord.LoginFailure:
         log.error("Discord didn't accept DISCORD_TOKEN. Copy the bot token again from the Developer Portal "
                   "(Bot -> Reset Token) into .env.")

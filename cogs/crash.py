@@ -13,7 +13,7 @@ from utils.economy import Wager, fmt, fmt_mult, result_color, result_line, take_
 from utils.rng import rng
 from utils.views import OwnedView
 
-log = logging.getLogger("gamblebot.crash")
+log = logging.getLogger("jaxcasino.crash")
 
 GROWTH = 0.12      # multiplier = e^(GROWTH * seconds): 2x ≈ 5.8s, 10x ≈ 19s, 100x ≈ 38s
 MAX_CRASH = 1000.0

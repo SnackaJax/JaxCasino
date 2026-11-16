@@ -34,7 +34,7 @@ from utils import reef_engine as E
 from utils.economy import Wager
 from utils.rng import rng
 
-log = logging.getLogger("gamblebot.activity.reef")
+log = logging.getLogger("jaxcasino.activity.reef")
 
 GAME = "reefrush"
 TABLE_SHUTDOWN = 120         # a lobby with nobody connected is dropped after this
@@ -310,7 +310,7 @@ class ReefHub:
     async def join(self, hello: dict, ws) -> tuple[Table | None, ReefPlayer | None, str | None]:
         if not config.REEF_RUSH_ENABLED:
             return None, None, "Reef Rush isn't open yet."
-        session, guild_id, member, problem = await self.server.admit(hello)
+        session, guild_id, member, problem = await self.server.admit(hello, ws)
         if problem:
             return None, None, problem
         table = self.tables.get(guild_id)

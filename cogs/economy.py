@@ -112,7 +112,7 @@ class Economy(commands.Cog):
     @app_commands.command(name="help", description="List all games and commands.")
     async def help(self, interaction: discord.Interaction):
         embed = discord.Embed(
-            title="🎰 GambleBot",
+            title="🎰 JaxCasino",
             description=(
                 f"New players start with {fmt(config.STARTING_BALANCE)}. "
                 f"Minimum bet is {fmt(config.MIN_BET)}. Bet any whole amount (like `1234`), "

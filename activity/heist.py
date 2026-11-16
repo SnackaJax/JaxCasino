@@ -34,7 +34,7 @@ from utils import heist_engine as E
 from utils.economy import Wager
 from utils.rng import rng
 
-log = logging.getLogger("gamblebot.activity.heist")
+log = logging.getLogger("jaxcasino.activity.heist")
 
 GAME = "raccoonheist"
 TABLE_SHUTDOWN = 120         # a lobby with nobody connected is dropped after this
@@ -321,7 +321,7 @@ class HeistHub:
     async def join(self, hello: dict, ws) -> tuple[Table | None, HeistPlayer | None, str | None]:
         if not config.RACCOON_HEIST_ENABLED:
             return None, None, "Raccoon Heist isn't open yet."
-        session, guild_id, member, problem = await self.server.admit(hello)
+        session, guild_id, member, problem = await self.server.admit(hello, ws)
         if problem:
             return None, None, problem
         table = self.tables.get(guild_id)

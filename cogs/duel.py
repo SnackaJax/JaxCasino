@@ -11,7 +11,7 @@ from utils.economy import Wager, fmt, send_error, take_bet
 from utils.rng import rng
 from utils.views import BaseView
 
-log = logging.getLogger("gamblebot.duel")
+log = logging.getLogger("jaxcasino.duel")
 
 GAMES = {"coinflip": "🪙 Coinflip", "dice": "🎲 Dice", "rps": "✊ Rock Paper Scissors"}
 RPS = {"rock": "🪨", "paper": "📄", "scissors": "✂️"}

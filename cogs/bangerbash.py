@@ -24,7 +24,7 @@ from utils.economy import fmt, result_color, result_line, send_error, take_bet, 
 from utils.rng import rng
 from utils.views import BaseView
 
-log = logging.getLogger("gamblebot.bangerbash")
+log = logging.getLogger("jaxcasino.bangerbash")
 
 GAME = "bangerbash"
 BET_DESC = "Total bet for all 20 lines: any amount (e.g. 1234) or a shortcut: 2.5k, 1m, half, all"

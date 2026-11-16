@@ -33,8 +33,11 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import secrets
 import time
+import weakref
+from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Awaitable, Callable
@@ -53,7 +56,7 @@ from activity.voice import DealerVoice
 from utils.economy import Wager
 from utils.rng import rng
 
-log = logging.getLogger("gamblebot.activity")
+log = logging.getLogger("jaxcasino.activity")
 
 STATIC = Path(__file__).parent / "static"
 API = "https://discord.com/api/v10"
@@ -68,6 +71,16 @@ GAME_PAGES = {"spinfrenzy": "/spinfrenzy", "bangerbash": "/bangerbash", "poker":
 IDLE_SHUTDOWN = 120          # an instance with nobody connected stops after this many seconds
 MAX_MESSAGES_PER_SECOND = 15
 HISTORY = 24
+
+# Checking an Activity instance with Discord (see verified_guild)
+INSTANCE_ID = re.compile(r"[A-Za-z0-9_-]{1,100}")   # Discord's instance ids, e.g. i-123-gc-456-789
+INSTANCE_LOOKUP_TRIES = 3    # a 404 is asked again after 1s and 2s: a brand-new instance can take a moment to show up
+INSTANCE_CACHE_TTL = 10 * 60
+# Sign-ins (/api/token). Every one makes the bot call Discord, and Discord temporarily bans an IP address that sends
+# it too many invalid requests, so made-up codes mustn't be passed on unlimited.
+TOKEN_LIMIT_PER_ADDRESS = 10   # per minute, from one address
+TOKEN_LIMIT_TOTAL = 60         # per minute, from everyone together
+MAX_SOCKETS_PER_USER = 8       # open game connections per player, over every game and device
 
 # Phase lengths in seconds
 T_BOOST = 3.6
@@ -538,6 +551,9 @@ class ActivityServer:
         self.reef = ReefHub(self)
         self.heist = HeistHub(self)
         self.start_with: dict[int, tuple[str, float]] = {}   # user id -> (game page, expiry): see want_game
+        self.instance_guilds: dict[str, tuple[int | None, float]] = {}   # instance id -> (guild id, expiry)
+        self.token_calls: dict[str, deque] = {}   # address ("" = everyone) -> times of recent sign-ins
+        self.user_sockets: dict[int, weakref.WeakSet] = {}   # user id -> their open game connections
 
     # ------------------------------------------------------------------ lifecycle
     def app(self) -> web.Application:
@@ -634,12 +650,38 @@ class ActivityServer:
         return web.json_response({"client_id": str(self.client_id() or ""), "dev": bool(self.dev_guild_id),
                                   "min_bet": s.min_bet, "max_bet": s.max_bet, "games": list(GAME_PAGES)})
 
+    def sign_in_allowed(self, request: web.Request) -> bool:
+        """Counts a sign-in against the per-address and overall limits (TOKEN_LIMIT_*)."""
+        # Behind a Cloudflare tunnel or a proxy every request comes from the tunnel, so the visitor's address is in a
+        # header. A header can be made up by a caller, which is why there's an overall limit as well.
+        address = (request.headers.get("CF-Connecting-IP") or request.headers.get("X-Forwarded-For", "").split(",")[0]
+                   or request.remote or "?").strip()[:64]
+        now = time.monotonic()
+        windows = []
+        for key, limit in ((address, TOKEN_LIMIT_PER_ADDRESS), ("", TOKEN_LIMIT_TOTAL)):
+            calls = self.token_calls.setdefault(key, deque())
+            while calls and now - calls[0] > 60:
+                calls.popleft()
+            if len(calls) >= limit:
+                return False
+            windows.append(calls)
+        for calls in windows:
+            calls.append(now)
+        if len(self.token_calls) > 10_000:   # forget addresses that haven't signed in for a minute
+            for key in [k for k, v in self.token_calls.items() if k and (not v or now - v[-1] > 60)]:
+                del self.token_calls[key]
+        return True
+
     async def api_token(self, request: web.Request) -> web.Response:
         try:
             body = await request.json()
             code = str(body["code"])
         except (ValueError, KeyError, TypeError):
             return web.json_response({"error": "missing code"}, status=400)
+        if not self.sign_in_allowed(request):
+            log.warning("Activity: too many sign-ins, refused one (from %s)", request.remote)
+            return web.json_response({"error": "Too many sign-ins right now. Wait a minute and reopen the Activity."},
+                                     status=429)
         client_id = self.client_id()
         if not client_id or not self.client_secret:
             log.error("Spin Frenzy: DISCORD_CLIENT_SECRET is not set, so nobody can sign in to the Activity")
@@ -647,18 +689,24 @@ class ActivityServer:
                                                "(DISCORD_CLIENT_SECRET is missing)."}, status=500)
         form = {"client_id": str(client_id), "client_secret": self.client_secret,
                 "grant_type": "authorization_code", "code": code}
-        async with self.http.post(f"{API}/oauth2/token", data=form) as r:
-            token = await r.json(content_type=None)
-            if r.status != 200 or "access_token" not in token:
-                log.warning("Spin Frenzy: OAuth code exchange failed (%s): %s", r.status, token)
-                return web.json_response({"error": "Discord sign-in failed. Try reopening the Activity."},
-                                         status=401)
-        access = token["access_token"]
-        async with self.http.get(f"{API}/users/@me", headers={"Authorization": f"Bearer {access}"}) as r:
-            if r.status != 200:
-                return web.json_response({"error": "Couldn't read your Discord account."}, status=401)
-            user = await r.json()
-        session = self.new_session(int(user["id"]), user.get("global_name") or user["username"])
+        try:
+            async with self.http.post(f"{API}/oauth2/token", data=form) as r:
+                token = await r.json(content_type=None)
+                if r.status != 200 or not isinstance(token, dict) or "access_token" not in token:
+                    log.warning("Spin Frenzy: OAuth code exchange failed (%s): %s", r.status, token)
+                    return web.json_response({"error": "Discord sign-in failed. Try reopening the Activity."},
+                                             status=401)
+            access = token["access_token"]
+            async with self.http.get(f"{API}/users/@me", headers={"Authorization": f"Bearer {access}"}) as r:
+                if r.status != 200:
+                    return web.json_response({"error": "Couldn't read your Discord account."}, status=401)
+                user = await r.json()
+            session = self.new_session(int(user["id"]), user.get("global_name") or user["username"])
+        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, KeyError, TypeError) as e:
+            # Discord unreachable, or an answer that isn't the JSON it should be (an outage page, for example)
+            log.warning("Spin Frenzy: sign-in failed, Discord gave no usable answer: %r", e)
+            return web.json_response({"error": "Couldn't reach Discord to sign you in. Try again in a moment."},
+                                     status=502)
         return web.json_response({"access_token": access, "session": session})
 
     async def api_voice(self, request: web.Request) -> web.Response:
@@ -735,23 +783,48 @@ class ActivityServer:
         return web.Response(body=body, content_type=ctype.split(";")[0],
                             headers={"Cache-Control": "public, max-age=3600"})
 
-    async def verified_guild(self, instance_id: str, claimed_guild: int | None, user_id: int) -> int | None:
-        """The guild of an Activity instance, from Discord when it can be checked, else what the page says."""
+    async def verified_guild(self, instance_id: str, claimed_guild: int | None,
+                             user_id: int) -> tuple[int | None, str | None]:
+        """The guild of an Activity instance, checked with Discord: (guild id, problem).
+
+        If Discord says the instance doesn't exist (404, asked INSTANCE_LOOKUP_TRIES times because a brand-new
+        instance can take a moment to show up), the player is refused: otherwise a page could make up an instance
+        for any server it likes. If Discord can't be asked at all (network trouble, a Discord error), the page's
+        guild id is used, so an outage doesn't lock everyone out. Answers are remembered for INSTANCE_CACHE_TTL."""
+        now = time.time()
+        cached = self.instance_guilds.get(instance_id)
+        if cached and cached[1] > now:
+            return cached[0], None
         app_id = self.client_id()
-        if app_id and self.bot_token and instance_id and self.http:
+        if not (app_id and self.bot_token and self.http):
+            return claimed_guild, None
+        url = f"{API}/applications/{app_id}/activity-instances/{instance_id}"
+        for attempt in range(INSTANCE_LOOKUP_TRIES):
+            if attempt:
+                await asyncio.sleep(attempt)
             try:
-                async with self.http.get(f"{API}/applications/{app_id}/activity-instances/{instance_id}",
-                                         headers={"Authorization": f"Bot {self.bot_token}"}) as r:
+                async with self.http.get(url, headers={"Authorization": f"Bot {self.bot_token}"}) as r:
                     if r.status == 200:
                         data = await r.json()
                         gid = (data.get("location") or {}).get("guild_id")
+                        gid = int(gid) if gid else None
                         if str(user_id) not in [str(u) for u in data.get("users", [])]:
                             log.debug("User %s not (yet) listed in instance %s", user_id, instance_id)
-                        return int(gid) if gid else None
-                    log.debug("Instance lookup for %s returned %s; using the page's guild id", instance_id, r.status)
+                        if len(self.instance_guilds) > 2000:
+                            self.instance_guilds = {k: v for k, v in self.instance_guilds.items() if v[1] > now}
+                        self.instance_guilds[instance_id] = (gid, now + INSTANCE_CACHE_TTL)
+                        return gid, None
+                    if r.status != 404:
+                        log.warning("Instance lookup for %s returned %s; using the page's guild id", instance_id,
+                                    r.status)
+                        return claimed_guild, None
             except (aiohttp.ClientError, asyncio.TimeoutError, ValueError):
-                log.debug("Instance lookup for %s failed; using the page's guild id", instance_id, exc_info=True)
-        return claimed_guild
+                log.warning("Instance lookup for %s failed; using the page's guild id", instance_id, exc_info=True)
+                return claimed_guild, None
+            log.debug("Instance lookup for %s returned 404 (try %s of %s)", instance_id, attempt + 1,
+                      INSTANCE_LOOKUP_TRIES)
+        log.warning("Activity instance %s (user %s) is unknown to Discord; refused", instance_id, user_id)
+        return None, "Discord doesn't know this game session. Close the Activity and open it again."
 
     # ------------------------------------------------------------------ websocket
     async def websocket(self, request: web.Request) -> web.WebSocketResponse:
@@ -803,33 +876,43 @@ class ActivityServer:
                     await inst.push_state()
         return ws
 
-    async def admit(self, hello: dict) -> tuple[Session | None, int | None, dict | None, str | None]:
-        """Checks a page's first websocket message: (session, guild id, member, problem)."""
+    async def admit(self, hello: dict, ws: web.WebSocketResponse) -> tuple[Session | None, int | None, dict | None,
+                                                                         str | None]:
+        """Checks a page's first websocket message: (session, guild id, member, problem). Every game's connection
+        comes through here, so this is also where a player's open connections are counted."""
         if not isinstance(hello, dict) or hello.get("type") != "join":
             return None, None, None, "Bad hello."
         session = self.sessions.get(str(hello.get("session", "")))
         if session is None or session.expires < time.time():
             return None, None, None, "Your session expired. Close and reopen the Activity."
-        instance_id = str(hello.get("instance_id") or "")[:100]
-        if not instance_id:
+        instance_id = str(hello.get("instance_id") or "")
+        if not INSTANCE_ID.fullmatch(instance_id):
             return None, None, None, "Missing instance."
+        open_now = self.user_sockets.setdefault(session.user_id, weakref.WeakSet())
+        for old in [w for w in open_now if w.closed]:
+            open_now.discard(old)
+        if len(open_now) >= MAX_SOCKETS_PER_USER:
+            return None, None, None, "You have the casino open in too many places. Close some of them and try again."
         try:
             claimed = int(hello.get("guild_id") or 0) or None
         except (TypeError, ValueError):
             claimed = None
         if self.dev_guild_id:
-            guild_id = self.dev_guild_id
+            guild_id, problem = self.dev_guild_id, None
         else:
-            guild_id = await self.verified_guild(instance_id, claimed, session.user_id)
+            guild_id, problem = await self.verified_guild(instance_id, claimed, session.user_id)
+        if problem:
+            return None, None, None, problem
         if not guild_id:
             return None, None, None, "The games only work in a server's voice channel, not in DMs."
         member = await self.resolve_member(guild_id, session.user_id)
         if member is None:
             return None, None, None, "You need to be a member of this server (and the bot must be in it) to play."
+        open_now.add(ws)
         return session, guild_id, member, None
 
     async def join(self, hello: dict, ws) -> tuple[Instance | None, Player | None, str | None]:
-        session, guild_id, member, problem = await self.admit(hello)
+        session, guild_id, member, problem = await self.admit(hello, ws)
         if problem:
             return None, None, problem
         instance_id = str(hello.get("instance_id"))[:100]

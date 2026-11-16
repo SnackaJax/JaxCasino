@@ -6,6 +6,25 @@
 
 A Discord gambling bot with 16 games (four of them also in a Discord Activity), a shop, a credit economy and admin tools. Built with Python, discord.py and SQLite.
 
+## Screenshots
+
+The casino runs as a Discord Activity: everyone in a call or channel can open it and play together. These were taken
+on the local test server (`python -m activity.devserver`), so the players are test accounts.
+
+<p align="center">
+  <img src="docs/screenshots/menu.jpg" alt="The game menu with six games" width="72%">
+  <img src="docs/screenshots/menu-phone.jpg" alt="The game menu on a phone" width="22%">
+</p>
+
+| | |
+|:-:|:-:|
+| **Blackjack**: live tables with side bets. Here a Perfect Pairs win (25:1) is stacked on its bet, and one player plays two seats. | **Poker**: Texas Hold'em tables against the others in the server. |
+| ![Live blackjack](docs/screenshots/blackjack.jpg) | ![Poker](docs/screenshots/poker.jpg) |
+| **Spin Frenzy**: one shared wheel for the whole call, with bonus rounds. | **Banger Bash**: a barbecue slot with wild flames and a bonus game. |
+| ![Spin Frenzy](docs/screenshots/spin-frenzy.jpg) | ![Banger Bash](docs/screenshots/banger-bash.jpg) |
+| **Reef Rush**: 7×7 cluster cascades. Here the Kraken woke up. | **Raccoon Heist**: raid the vault, drill the walls, call the Boss. |
+| ![Reef Rush](docs/screenshots/reef-rush.jpg) | ![Raccoon Heist](docs/screenshots/raccoon-heist.jpg) |
+
 ## Setup
 
 ### 1. Create the Discord bot

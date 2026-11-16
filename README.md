@@ -99,7 +99,7 @@ python download_voices.py
 ```bash
 python bot.py
 ```
-On Windows, `startbot.bat` does the last step. The database (`gamble.db`) and `logs/` are created in the bot's folder.
+The database (`gamble.db`) and `logs/` are created in the bot's folder.
 
 ### 4. (Optional) The Activity: casino
 The Activity is the casino that opens inside Discord voice calls (the screenshots above). It needs a public HTTPS address for the bot's web server; the full steps are under [Spin Frenzy → Setup](#spin-frenzy). In short:

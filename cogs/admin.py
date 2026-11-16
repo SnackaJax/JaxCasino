@@ -8,7 +8,7 @@ from discord.ext import commands
 import config
 from cogs.serverstats import MIN_PLAYS_FOR_ODDS, ODDS_GAMES, game_name
 from utils.checks import admin_only, gambling_channels
-from utils.economy import fmt
+from utils.economy import fmt, send_error
 from utils.shop import ITEMS, PRICE_LABELS, get_prices, item_price_text, price_text
 from utils.views import ConfirmView
 
@@ -27,10 +27,20 @@ class Admin(commands.Cog):
         self.bot = bot
 
     # ------------------------------------------------------------ credits
+    @staticmethod
+    async def refuse_bot(interaction: discord.Interaction, user: discord.Member) -> bool:
+        """Bots (this one included) aren't players: credits given to one would just be gone from the game."""
+        if user.bot:
+            await send_error(interaction, "Bots can't have credits. Pick a player.")
+            return True
+        return False
+
     @admin.command(name="give", description="Give credits to a player.")
     @admin_only()
     async def give(self, interaction: discord.Interaction, user: discord.Member,
                    amount: app_commands.Range[int, 1, MAX_AMOUNT]):
+        if await self.refuse_bot(interaction, user):
+            return
         bal = await self.bot.db.add_balance(interaction.guild_id, user.id, amount)
         await interaction.response.send_message(embed=admin_embed(
             f"➕ Gave {fmt(amount)} to {user.mention}. New balance: {fmt(bal)}", discord.Color.green()))
@@ -39,6 +49,8 @@ class Admin(commands.Cog):
     @admin_only()
     async def remove(self, interaction: discord.Interaction, user: discord.Member,
                      amount: app_commands.Range[int, 1, MAX_AMOUNT]):
+        if await self.refuse_bot(interaction, user):
+            return
         bal = await self.bot.db.add_balance(interaction.guild_id, user.id, -amount)
         await interaction.response.send_message(embed=admin_embed(
             f"➖ Removed {fmt(amount)} from {user.mention}. New balance: {fmt(bal)}", discord.Color.orange()))
@@ -47,6 +59,8 @@ class Admin(commands.Cog):
     @admin_only()
     async def set_(self, interaction: discord.Interaction, user: discord.Member,
                    amount: app_commands.Range[int, 0, MAX_AMOUNT]):
+        if await self.refuse_bot(interaction, user):
+            return
         await self.bot.db.set_balance(interaction.guild_id, user.id, amount)
         await interaction.response.send_message(embed=admin_embed(
             f"✏️ Set {user.mention}'s balance to {fmt(amount)}."))

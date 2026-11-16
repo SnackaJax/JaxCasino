@@ -48,6 +48,9 @@ class Economy(commands.Cog):
     @app_commands.command(name="balance", description="Check your (or someone else's) balance.")
     async def balance(self, interaction: discord.Interaction, user: discord.Member | None = None):
         user = user or interaction.user
+        if user.bot:   # looking one up would open an account for it with the starting balance
+            await send_error(interaction, "Bots don't have a balance.")
+            return
         bal = await self.bot.db.get_balance(interaction.guild_id, user.id)
         embed = discord.Embed(description=f"{user.mention} has {fmt(bal)}", color=discord.Color.gold())
         await interaction.response.send_message(embed=embed)

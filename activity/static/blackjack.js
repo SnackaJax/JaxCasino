@@ -299,8 +299,9 @@ function setupInfo() {
       <li>${W.decks}-deck shoe. The dealer stands on all 17s. A win pays 1:1, blackjack pays 3:2, a tie is a push (your
       bet comes back). When the dealer has blackjack, the round ends straight away.</li>
       <li>Anyone in the server can watch a table. A seat with no bet for a few rounds in a row is given up.</li>
-      <li>You can play more than one seat: tap <b>+ SEAT</b> on any empty one. Tap one of your seats
-      to put your chips there. <b>Clear</b>, <b>Rebet</b>, <b>×2</b> and <b>Deal</b> work on all your seats; × on a
+      <li>You can play more than one seat: tap <b>+ SEAT</b> on any empty one. With <b>⧉ All seats</b> on (it is
+      until you switch it off), every chip goes on all your seats at once; switch it off and tap one of your seats to
+      put your chips there. <b>Clear</b>, <b>Rebet</b>, <b>×2</b> and <b>Deal</b> work on all your seats; × on a
       seat leaves just that one.</li>
       <li>💬 at the top: quick chats and emotes for everyone at the table.</li>
     </ul>
@@ -724,10 +725,23 @@ function sideShown(st, s, k) {
 let target = 'main';
 function setTarget(k) {
   target = k;
-  $('betTarget').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.t === k));
+  $('betTarget').querySelectorAll('button[data-t]').forEach((b) => b.classList.toggle('on', b.dataset.t === k));
   if (T) renderStatic(T);
 }
-$('betTarget').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => { unlock(); sfx.click(); setTarget(b.dataset.t); }));
+$('betTarget').querySelectorAll('button[data-t]').forEach((b) => b.addEventListener('click', () => { unlock(); sfx.click(); setTarget(b.dataset.t); }));
+
+// Copy bets: a player with two or more seats puts every chip on all of them at once (one message; the server skips a
+// seat that can't take it). On unless the player switched it off; that choice is remembered on this device.
+let copyBets = true;
+try { copyBets = localStorage.getItem('blackjack-copy-bets') !== '0'; } catch (e) { /* storage blocked */ }
+const copying = (st) => copyBets && (st.mine || []).length > 1;
+$('copyBtn').addEventListener('click', () => {
+  unlock(); sfx.click();
+  copyBets = !copyBets;
+  try { localStorage.setItem('blackjack-copy-bets', copyBets ? '1' : '0'); } catch (e) { /* storage blocked */ }
+  toast(copyBets ? 'Chips now go on all your seats.' : 'Chips now go on one seat: tap a seat to pick it.', true);
+  if (T) renderStatic(T);
+});
 
 function setStack(i, amount) {
   const e = spotEls[i];
@@ -767,7 +781,9 @@ function renderStatic(st, opts = {}) {
     if (e.nm.textContent !== name) e.nm.textContent = name;
     const turn = st.turn && st.turn.seat === i;
     e.root.classList.toggle('mine', mine.includes(i));
-    e.root.classList.toggle('focus', mine.length > 1 && i === st.you);
+    // the seat(s) your chips go to: all of them while copying bets, else the one in focus
+    const allSeats = copying(st) && st.phase === 'betting';
+    e.root.classList.toggle('focus', mine.length > 1 && (allSeats ? mine.includes(i) : i === st.you));
     e.unsit.classList.toggle('hidden', !(mine.length > 1 && mine.includes(i) && !s.leaving && (st.phase === 'betting' || !s.hands.length)));
     e.root.classList.toggle('turn', !!turn);
     e.root.classList.toggle('ready', st.phase === 'betting' && s.ready);
@@ -837,18 +853,31 @@ function renderControls(st) {
       chipKey = k;
       $('chipPick').innerHTML = vals.map((v) => `<button data-v="${v}" title="${fmt(v)}">${chipHtml(v, shortNum(v))}</button>`).join('');
       $('chipPick').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
-        unlock(); sfx.chips(2); send({ type: 'bet', amount: Number(b.dataset.v), spot: target, seat: T ? T.you : undefined });
+        unlock(); sfx.chips(2);
+        const amount = Number(b.dataset.v);
+        if (T && copying(T)) send({ type: 'bet', amount, spot: target, all: true });
+        else send({ type: 'bet', amount, spot: target, seat: T ? T.you : undefined });
       }));
     }
-    // side bets need a main bet, and can be at most as big as it (a bigger chip is cut down to fit)
-    const sideRoom = target === 'main' ? 0 : me.bet - me.side[target];
-    $('chipPick').querySelectorAll('button').forEach((b) => {
-      const v = Number(b.dataset.v);
-      b.disabled = target === 'main' ? v > balance || me.bet >= st.max_bet || me.bet + v < st.min_bet
-        : !me.bet || sideRoom <= 0 || Math.min(v, sideRoom) > balance;
-    });
-    $('betTarget').querySelectorAll('button').forEach((b) => { if (b.dataset.t !== 'main') b.classList.toggle('dim', !me.bet); });
     const all = myBets(st);
+    const copy = copying(st);
+    $('copyBtn').classList.toggle('hidden', all.seats.length < 2);
+    $('copyBtn').classList.toggle('on', copyBets);
+    $('copyBtn').setAttribute('aria-pressed', String(copyBets));
+    // What a chip of value v puts on a seat, as the server does it: a main bet is cut down to the table maximum (and
+    // must reach the minimum); a side bet needs a main bet and is cut down to at most the main bet.
+    const room = (s, v) => (target === 'main'
+      ? (s.bet + v < st.min_bet ? 0 : Math.max(0, Math.min(v, st.max_bet - s.bet)))
+      : (s.bet ? Math.max(0, Math.min(v, s.bet - s.side[target])) : 0));
+    const betSeats = copy ? all.seats.filter((s) => !s.leaving) : [me];
+    // while copying, a chip is only offered if every seat that takes it can be paid for
+    $('chipPick').querySelectorAll('button').forEach((b) => {
+      const parts = betSeats.map((s) => room(s, Number(b.dataset.v)));
+      b.disabled = !parts.some((x) => x > 0) || parts.reduce((a, x) => a + x, 0) > balance;
+    });
+    $('betTarget').querySelectorAll('button[data-t]').forEach((b) => {
+      if (b.dataset.t !== 'main') b.classList.toggle('dim', !betSeats.some((s) => s.bet));
+    });
     const lastAll = all.rebet.reduce((a, s) => a + Math.min(s.last_bet, st.max_bet)
       + (s.last_side ? Math.min(s.last_side.pp, s.last_bet) + Math.min(s.last_side.t3, s.last_bet) : 0), 0);
     const doubling = all.seats.filter((s) => s.bet && s.bet < st.max_bet);

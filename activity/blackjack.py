@@ -959,7 +959,12 @@ class Room:
                         raise Rejected("Invalid amount.")
                     if spot not in ("main", *SIDE_BETS):
                         raise Rejected("Invalid bet.")
-                    await t.place_bets(seat, {spot: amount})
+                    if msg.get("all") is True and len(seats) > 1:
+                        # "copy bets" on the page: the same chip on every one of the player's seats, in one message.
+                        # A seat that can't take it (at the maximum, leaving, no main bet for a side bet) is skipped.
+                        await self.each(t, seats, lambda s: t.place_bets(s, {spot: amount}))
+                    else:
+                        await t.place_bets(seat, {spot: amount})
                 elif kind == "clear":
                     for s in seats:
                         await t.clear_bet(s)

@@ -363,6 +363,9 @@ body.discord-mobile #app { padding-top: max(env(safe-area-inset-top), var(--disc
 .bet-target button + button { border-left: 1px solid var(--line); }
 .bet-target button.on { background: var(--gold); color: #2b1a00; }
 .bet-target button.dim:not(.on) { opacity: .5; }
+/* "copy bets" is a switch, not one of the three places: green when on, so it doesn't read as the picked bet */
+.bet-target button.copy { color: var(--muted); white-space: nowrap; }
+.bet-target button.copy.on { background: #2e7d5b; color: #fff; }
 .icon-btn.off { opacity: .45; text-decoration: line-through; }
 .pays { width: 100%; border-collapse: collapse; font-size: 13px; margin: 6px 0 10px; }
 .pays th { text-align: left; color: var(--gold2); padding: 8px 0 3px; font-size: 13px; }

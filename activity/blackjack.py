@@ -29,6 +29,8 @@ Websocket /ws/blackjack. The page sends:
 A player can sit at any number of the free seats of a table, each with its own bets and hands. "seat" picks which of
 their seats a message is for; without it, "bet" goes to their first seat and the others are for all their seats.
   {"type": "act", "action": "hit"|"stand"|"double"|"split"}                         on your turn
+  {"type": "pre", "seat": int, "hand": int, "action": "hit"|"stand"|""}   before your turn: the action that hand
+       takes as soon as its turn comes ("" takes it back); used once, then that hand is yours to play again
   {"type": "chat", "id": int}                               a quick chat (an emote or a phrase from QUICK_CHATS)
 The server sends "welcome", "room" (the list of tables), "table" (the table you're watching, with an "event"
 describing what just happened, for the page's animations), "chat" (someone at your table said something),
@@ -74,6 +76,8 @@ DEALER_CARD_PAUSE = 0.95
 SETTLE_PAUSE = 4.2            # the payouts are shown before the cards are cleared
 CLOSE_PAUSE = 1.4             # "no more bets" before the cards come out
 SIDE_PAUSE = 2.6              # the side bets are paid before the first turn
+PRE_PAUSE = 0.7               # a hand with an action picked in advance shows its turn this long before taking it
+PRE_ACTIONS = ("hit", "stand")
 SIDE_BETS = ("pp", "t3")
 PP_PAYS = {"perfect": 25, "colored": 12, "mixed": 6}
 T3_PAYS = {"suited_trips": 100, "straight_flush": 40, "trips": 30, "straight": 10, "flush": 5}
@@ -136,16 +140,20 @@ class Hand:
     done: bool = False
     result: str = ""          # "" while open, then blackjack | win | push | lose | bust
     payout: int = 0
+    pre: str = ""             # hit | stand picked before its turn ("" none); only its player sees it
 
     @property
     def value(self) -> int:
         return hand_value(self.cards)[0]
 
-    def view(self) -> dict:
+    def view(self, mine: bool = False) -> dict:
         total, soft = hand_value(self.cards)
-        return {"cards": [card(c) for c in self.cards], "stake": self.stake, "doubled": self.doubled,
-                "total": total, "soft": soft and total < 21, "done": self.done, "result": self.result,
-                "payout": self.payout}
+        out = {"cards": [card(c) for c in self.cards], "stake": self.stake, "doubled": self.doubled,
+               "total": total, "soft": soft and total < 21, "done": self.done, "result": self.result,
+               "payout": self.payout}
+        if mine:
+            out["pre"] = self.pre
+        return out
 
 
 @dataclass(eq=False)          # seats are told apart by identity: one player's seats can look the same
@@ -201,6 +209,7 @@ class Table:
         self.token = 0                # bumped to cancel the running betting / turn timer
         self.timer: asyncio.Task | None = None
         self.flow: asyncio.Task | None = None
+        self.pre_task: asyncio.Task | None = None   # a hand's action picked before its turn, about to be taken
 
     @property
     def db(self):
@@ -285,7 +294,7 @@ class Table:
             seats.append({"id": str(s.user_id), "name": s.name, "avatar": s.avatar,
                           "online": s.user_id in self.room.viewers, "ready": s.ready, "leaving": s.leaving,
                           "bet": s.bet if self.phase == "betting" else sum(h.stake for h in live),
-                          "hands": [h.view() for h in s.hands], "last_bet": s.last_bet,
+                          "hands": [h.view(s.user_id == user_id) for h in s.hands], "last_bet": s.last_bet,
                           "won": s.won if self.phase == "settle" else 0,
                           "staked": sum(h.stake for h in s.hands) + (s.side_total if s.hands else 0),
                           "side": {k: 0 for k in SIDE_BETS} if s.side_done else dict(s.side),
@@ -607,7 +616,10 @@ class Table:
                     continue
                 self.turn = (i, j)
                 self.restart_turn_timer()
-                await self.push({"kind": "turn", "seat": i, "hand": j})
+                pre, h.pre = h.pre, ""
+                await self.push({"kind": "turn", "seat": i, "hand": j, **({"pre": pre} if pre else {})})
+                if pre:
+                    self.pre_task = asyncio.create_task(self._pre_act(self.token, s.user_id, pre))
                 return
         self.turn = None
         self.token += 1
@@ -644,6 +656,34 @@ class Table:
                 await self.advance()
             except Exception:
                 log.exception("Blackjack (Activity): advance after a timeout failed")
+
+    async def _pre_act(self, token: int, user_id: int, action: str) -> None:
+        """Takes the action the player picked before this hand's turn came, after a moment so everyone sees whose
+        turn it is. Nothing happens if the turn moved on in the meantime (the player acted themselves, or left)."""
+        await asyncio.sleep(PRE_PAUSE)
+        async with self.lock:
+            if token != self.token or self.phase != "playing" or not self.turn:
+                return
+            try:
+                await self.act(user_id, action)
+            except Rejected:
+                pass
+            except Exception:
+                log.exception("Blackjack (Activity): a pre-selected %s failed", action)
+
+    async def preselect(self, user_id: int, seat: int, hand: int, action: str) -> None:
+        """Picks (or takes back, with "") hit or stand for one of the player's hands that hasn't had its turn yet."""
+        if self.phase != "playing":
+            raise Rejected("You can only pick an action while the hands are being played.")
+        s = self.seats[seat] if 0 <= seat < len(self.seats) else None
+        if s is None or s.user_id != user_id or not 0 <= hand < len(s.hands):
+            raise Rejected("That's not your hand.")
+        h = s.hands[hand]
+        if h.done or s.leaving:
+            raise Rejected("That hand is already finished.")
+        if self.turn == (seat, hand):
+            raise Rejected("It's that hand's turn: play it now.")
+        h.pre = action
 
     async def act(self, user_id: int, action: str) -> None:
         if self.phase != "playing" or not self.turn:
@@ -931,7 +971,7 @@ class Room:
             await self.push_room()
         elif kind == "chat":
             await self.chat(v, msg.get("id"))
-        elif kind in ("sit", "leave", "bet", "clear", "rebet", "double_bet", "ready", "act"):
+        elif kind in ("sit", "leave", "bet", "clear", "rebet", "double_bet", "ready", "act", "pre"):
             t = self.tables.get(v.watching) if v.watching is not None else None
             if t is None:
                 raise Rejected("Open a table first.")
@@ -983,6 +1023,13 @@ class Room:
                     await self.each(t, todo, lambda s: t.place_bets(s, {"main": s.bet, **s.side}))
                 elif kind == "ready":
                     await t.set_ready(seats)
+                elif kind == "pre":
+                    action, hand = msg.get("action"), msg.get("hand")
+                    if action not in (*PRE_ACTIONS, "") or pick is None or not isinstance(hand, int) or isinstance(
+                            hand, bool):
+                        raise Rejected("Invalid action.")
+                    await t.preselect(v.user_id, pick, hand, action)
+                    await self.push_view(v.user_id)
                 else:
                     action = msg.get("action")
                     if action not in ("hit", "stand", "double", "split"):

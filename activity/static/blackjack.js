@@ -296,6 +296,8 @@ function setupInfo() {
       get exactly one more card) or <b>Split</b> two cards of the same value into two hands (up to ${W.max_hands}
       hands; split aces get one card each). You have ${W.turn_time} seconds; if time runs out you stand, and after two
       timeouts in a row you're taken off the table.</li>
+      <li>While others are playing you can already pick <b>Hit</b> or <b>Stand</b> for your next hand: it's taken as
+      soon as that hand's turn comes. Tap it again to take it back. After a hit you choose again.</li>
       <li>${W.decks}-deck shoe. The dealer stands on all 17s. A win pays 1:1, blackjack pays 3:2, a tie is a push (your
       bet comes back). When the dealer has blackjack, the round ends straight away.</li>
       <li>Anyone in the server can watch a table. A seat with no bet for a few rounds in a row is given up.</li>
@@ -911,8 +913,47 @@ function renderControls(st) {
     if (me && st.phase !== 'betting' && !me.hands.length) text = text ? `${text} You're in from the next round.` : "You're in from the next round.";
     if (!me && !free) text = 'This table is full. You can watch.';
     $('waitText').textContent = text;
+    renderPre(st);
   }
 }
+// Hit or Stand picked before your turn: it goes on your next hand still to play (seats play from the dealer's left,
+// a seat's hands in order), and the server takes it as soon as that hand's turn comes. Only shown once the turns have
+// started, so the totals don't give the cards away before they're dealt on screen.
+let preNext = null;   // {seat, hand} the buttons are for
+function nextHand(st) {
+  if (st.phase !== 'playing' || !st.turn) return null;
+  for (const i of [...(st.mine || [])].sort((a, b) => a - b)) {
+    const s = st.seats[i];
+    if (!s || s.leaving) continue;
+    for (let j = 0; j < s.hands.length; j++) {
+      const h = s.hands[j];
+      if (h.done || (st.turn.seat === i && st.turn.hand === j)) continue;
+      return { seat: i, hand: j, h, multi: st.mine.length > 1 || s.hands.length > 1 };
+    }
+  }
+  return null;
+}
+function renderPre(st) {
+  const n = nextHand(st);
+  preNext = n;
+  $('preRow').classList.toggle('hidden', !n);
+  if (!n) return;
+  const total = n.h.soft ? `${n.h.total - 10}/${n.h.total}` : n.h.total;
+  $('preLabel').innerHTML = `${n.multi ? 'Next hand' : 'Your hand'} <b>${esc(String(total))}</b> · then:`;
+  for (const [id, a] of [['preHit', 'hit'], ['preStand', 'stand']]) {
+    const on = n.h.pre === a;
+    $(id).classList.toggle('on', on);
+    $(id).setAttribute('aria-pressed', String(on));
+  }
+}
+function preselect(action) {
+  if (!preNext) return;
+  unlock(); sfx.click();
+  const { seat, hand, h } = preNext;
+  send({ type: 'pre', seat, hand, action: h.pre === action ? '' : action });
+}
+$('preHit').addEventListener('click', () => preselect('hit'));
+$('preStand').addEventListener('click', () => preselect('stand'));
 function act(action) {
   unlock();
   for (const id of ['hitBtn', 'standBtn', 'doubleBtn', 'splitBtn']) $(id).disabled = true;
@@ -936,8 +977,11 @@ document.addEventListener('keydown', (e) => {
   if (e.repeat || !T || $('tableView').classList.contains('hidden')) return;
   const k = e.key.toLowerCase();
   const map = { h: 'hitBtn', s: 'standBtn', d: 'doubleBtn', p: 'splitBtn', ' ': 'dealBtn' };
-  const b = map[k] && $(map[k]);
-  if (b && !b.disabled && !b.closest('.hidden, .off')) { e.preventDefault(); b.click(); }
+  const before = { h: 'preHit', s: 'preStand' };   // before your turn, H and S pick the next action
+  for (const id of [map[k], before[k]]) {
+    const b = id && $(id);
+    if (b && !b.disabled && !b.closest('.hidden, .off')) { e.preventDefault(); b.click(); return; }
+  }
 });
 
 // ================================================================== quick chat

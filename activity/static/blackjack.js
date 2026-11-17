@@ -19,7 +19,10 @@ const DENOMS = [
   [25, '#178a4c', '#fff', '#fff'], [100, '#1d1d1d', '#e8bd57', '#fff'], [500, '#7b3fb3', '#fff', '#fff'],
   [1000, '#e5a50a', '#5a3400', '#3a2400'], [5000, '#d9468f', '#fff', '#fff'], [10000, '#0f9a9a', '#fff', '#fff'],
   [25000, '#8b5a2b', '#ffe3b0', '#fff'], [100000, '#9aa4b1', '#1d1d1d', '#1d1d1d'], [500000, '#5b1020', '#e8bd57', '#fff'],
-  [1000000, '#e8bd57', '#5b1020', '#3a2400'],
+  [1000000, '#e8bd57', '#5b1020', '#3a2400'], [2000000, '#1f7a46', '#e8bd57', '#fff'],
+  [5000000, '#d0631a', '#fff3d6', '#fff'], [10000000, '#1b2f73', '#e8bd57', '#fff'],
+  [25000000, '#2c2c2c', '#c0c7d0', '#fff'], [50000000, '#a3122e', '#f2f2f2', '#fff'],
+  [100000000, '#f4f1e8', '#b8860b', '#3a2400'],
 ];
 const RACK = ['#1d1d1d', '#7b3fb3', '#e5a50a', '#178a4c', '#c8302c', '#2b5fc0', '#0f9a9a', '#d9468f', '#1d1d1d'];
 
@@ -853,7 +856,11 @@ function renderSide(st) {
 // ------------------------------------------------------------------ controls
 const amt = (v) => (innerWidth < 600 ? shortNum(v) : fmt(v));
 function chipValues(st) {
-  const vals = [st.min_bet, ...DENOMS.map((d) => d[0]).filter((v) => v > st.min_bet && v <= st.max_bet)];
+  const all = DENOMS.map((d) => d[0]);
+  // one chip under the minimum (half of it or more, e.g. 500K at a 1M table) to top a bet up between whole minimums;
+  // a bet still has to reach the minimum, the server says so if it doesn't
+  const below = all.filter((v) => v < st.min_bet && v * 2 >= st.min_bet).slice(-1);
+  const vals = [...below, st.min_bet, ...all.filter((v) => v > st.min_bet && v <= st.max_bet)];
   return vals.slice(0, innerWidth < 420 ? 5 : 6);
 }
 let chipKey = '';

@@ -119,6 +119,20 @@ CREATE TABLE IF NOT EXISTS shop_jobs (
     buyer_id  INTEGER NOT NULL,
     cost      INTEGER NOT NULL
 );
+-- Balance changes made in the admin panel (admin_panel/), with the balance before and after and an optional note.
+-- The change itself is also in money_log (kind 'admin'), like an /admin command's.
+CREATE TABLE IF NOT EXISTS admin_log (
+    id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    guild_id INTEGER NOT NULL,
+    user_id  INTEGER NOT NULL,
+    action   TEXT    NOT NULL,
+    amount   INTEGER NOT NULL,
+    before   INTEGER NOT NULL,
+    after    INTEGER NOT NULL,
+    note     TEXT,
+    ts       REAL    NOT NULL
+);
+CREATE INDEX IF NOT EXISTS admin_log_guild_ts ON admin_log (guild_id, ts);
 """
 
 
@@ -330,6 +344,27 @@ class Database:
             )
             await self._money(guild_id, user_id, kind, max(0, amount) - before)
             await self.conn.commit()
+
+    async def admin_edit(self, guild_id: int, user_id: int, action: str, amount: int,
+                         note: str | None = None) -> tuple[int, int]:
+        """A balance change from the admin panel: action 'set' (to exactly `amount`), 'add' or 'remove'. The
+        balance never goes below 0. Logged in money_log (kind 'admin') and admin_log. Returns (before, after)."""
+        _check_amount(amount)
+        if action not in ("set", "add", "remove"):
+            raise ValueError(f"invalid action: {action!r}")
+        async with self.lock:
+            await self._ensure(guild_id, user_id)
+            before = await self._balance(guild_id, user_id)
+            after = amount if action == "set" else before + amount if action == "add" else max(0, before - amount)
+            await self.conn.execute("UPDATE users SET balance=? WHERE guild_id=? AND user_id=?",
+                                    (after, guild_id, user_id))
+            await self._money(guild_id, user_id, "admin", after - before)
+            await self.conn.execute(
+                """INSERT INTO admin_log (guild_id, user_id, action, amount, before, after, note, ts)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (guild_id, user_id, action, amount, before, after, note or None, time.time()))
+            await self.conn.commit()
+            return before, after
 
     async def try_debit(self, guild_id: int, user_id: int, amount: int) -> bool:
         """Atomically removes `amount` if the user can afford it."""

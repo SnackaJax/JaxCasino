@@ -1,0 +1,164 @@
+import * as React from "react"
+import { useQuery } from "@tanstack/react-query"
+import { PencilSimpleIcon } from "@phosphor-icons/react"
+import { Area, AreaChart, XAxis, YAxis } from "recharts"
+
+import { api, type Player, type PlayerDetail } from "@/app/api"
+import { ago, compact, credits, gameColor, gameName, moneyName, pct, signed } from "@/app/format"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { ChartContainer, ChartTooltip, type ChartConfig } from "@/components/ui/chart"
+import { Skeleton } from "@/components/ui/skeleton"
+import { cn } from "@/lib/utils"
+
+const historyConfig = { balance: { label: "Balance", color: "var(--chart-1)" } } satisfies ChartConfig
+
+/** One player's details in the side sheet: balance, history, games and the edits made to them. */
+export function PlayerSheet({ guildId, player, onEdit }: { guildId: string; player: Player; onEdit: () => void }) {
+  const detail = useQuery({
+    queryKey: ["player", guildId, player.id],
+    queryFn: () => api.get<PlayerDetail>(`/api/players/${player.id}?guild=${guildId}`),
+  })
+  const d = detail.data
+  const history = React.useMemo(() => (d?.history ?? []).map(([ts, balance]) => ({ ts: ts * 1000, balance })), [d])
+
+  return (
+    <div className="flex flex-col gap-5 p-4">
+      <div className="flex items-end justify-between gap-3">
+        <div>
+          <div className="text-muted-foreground text-xs">Balance</div>
+          <div className="tabular text-3xl font-semibold">{credits(player.balance)}</div>
+          {player.in_play ? <div className="text-muted-foreground text-xs">+{credits(player.in_play)} in play</div> : null}
+        </div>
+        <Button onClick={onEdit} size="sm">
+          <PencilSimpleIcon data-icon="inline-start" /> Edit balance
+        </Button>
+      </div>
+
+      <div className="flex flex-wrap gap-1.5">
+        {player.username ? <Badge variant="outline">@{player.username}</Badge> : null}
+        <Badge variant="outline" className="tabular">
+          {player.id}
+        </Badge>
+        {!player.in_server ? <Badge variant="destructive">Left the server</Badge> : null}
+        <Badge variant="secondary">Active {ago(player.last_active)}</Badge>
+      </div>
+
+      <section>
+        <h3 className="text-muted-foreground mb-2 text-xs">Balance over time</h3>
+        {detail.isLoading ? (
+          <Skeleton className="h-36 w-full" />
+        ) : history.length > 1 ? (
+          <ChartContainer config={historyConfig} className="aspect-auto h-36 w-full">
+            <AreaChart data={history} margin={{ left: 0, right: 4, top: 4 }}>
+              <defs>
+                <linearGradient id="fillBalance" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="var(--color-balance)" stopOpacity={0.35} />
+                  <stop offset="100%" stopColor="var(--color-balance)" stopOpacity={0.02} />
+                </linearGradient>
+              </defs>
+              <XAxis dataKey="ts" type="number" scale="time" domain={["dataMin", "dataMax"]} hide />
+              <YAxis tickFormatter={(v) => compact(v)} tickLine={false} axisLine={false} width={40} fontSize={10} />
+              <ChartTooltip
+                content={({ payload }) => {
+                  const p = payload?.[0]?.payload as { ts: number; balance: number } | undefined
+                  if (!p) return null
+                  return (
+                    <div className="bg-popover rounded-md border px-2 py-1.5 text-xs shadow-md">
+                      <div className="text-muted-foreground">{new Date(p.ts).toLocaleString()}</div>
+                      <div className="tabular font-medium">{credits(p.balance)}</div>
+                    </div>
+                  )
+                }}
+              />
+              <Area dataKey="balance" type="stepAfter" stroke="var(--color-balance)" strokeWidth={1.5} fill="url(#fillBalance)" isAnimationActive={false} />
+            </AreaChart>
+          </ChartContainer>
+        ) : (
+          <p className="text-muted-foreground text-xs">No history yet.</p>
+        )}
+      </section>
+
+      <section className="grid grid-cols-3 gap-2">
+        <Stat label="Games" value={credits(player.games)} />
+        <Stat label="Win rate" value={pct(player.wins, player.games, 0)} />
+        <Stat label="Bet" value={compact(player.wagered)} />
+        <Stat label="Paid back" value={compact(player.won)} />
+        <Stat label="Net" value={signed(player.net)} tone={player.net > 0 ? "good" : player.net < 0 ? "bad" : undefined} />
+        <Stat label="Best win" value={compact(player.biggest_win)} />
+      </section>
+
+      {d?.stats.per_game.length ? (
+        <section>
+          <h3 className="text-muted-foreground mb-2 text-xs">Per game</h3>
+          <ul className="flex flex-col gap-1.5">
+            {[...d.stats.per_game]
+              .sort((a, b) => b.wagered - a.wagered)
+              .map((g) => (
+                <li key={g.game} className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-3 text-xs">
+                  <span className="flex items-center gap-2">
+                    <span className="size-2 rounded-full" style={{ background: gameColor(g.game) }} />
+                    {gameName(g.game)}
+                  </span>
+                  <span className="text-muted-foreground tabular">{credits(g.plays)}×</span>
+                  <span className="tabular w-14 text-right">{compact(g.wagered)}</span>
+                  <span className={cn("tabular w-20 text-right", g.net > 0 ? "text-success" : g.net < 0 ? "text-error" : "")}>
+                    {signed(g.net)}
+                  </span>
+                </li>
+              ))}
+          </ul>
+        </section>
+      ) : null}
+
+      {d && Object.keys(d.stats.money).length ? (
+        <section>
+          <h3 className="text-muted-foreground mb-2 text-xs">Credits outside games</h3>
+          <ul className="flex flex-col gap-1.5">
+            {Object.values(d.stats.money).map((m) => (
+              <li key={m.kind} className="flex justify-between text-xs">
+                <span>
+                  {m.kind === "received" ? "Payments received" : moneyName(m.kind)}{" "}
+                  <span className="text-muted-foreground">({m.n}×)</span>
+                </span>
+                <span className="tabular">{signed(m.amount)}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      <section>
+        <h3 className="text-muted-foreground mb-2 text-xs">Balance edits from this panel</h3>
+        {d?.edits.length ? (
+          <ul className="flex flex-col gap-2">
+            {d.edits.map((e) => (
+              <li key={e.id} className="text-xs">
+                <div className="flex justify-between gap-2">
+                  <span className="tabular">
+                    {credits(e.before)} → {credits(e.after)}
+                  </span>
+                  <span className="text-muted-foreground">{ago(e.ts)}</span>
+                </div>
+                {e.note ? <div className="text-muted-foreground">{e.note}</div> : null}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-muted-foreground text-xs">None.</p>
+        )}
+      </section>
+    </div>
+  )
+}
+
+function Stat({ label, value, tone }: { label: string; value: string; tone?: "good" | "bad" }) {
+  return (
+    <div className="bg-muted/40 rounded-md border px-2.5 py-2">
+      <div className="text-muted-foreground text-[11px]">{label}</div>
+      <div className={cn("tabular text-sm font-medium", tone === "good" && "text-success", tone === "bad" && "text-error")}>
+        {value}
+      </div>
+    </div>
+  )
+}

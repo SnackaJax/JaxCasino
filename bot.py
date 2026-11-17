@@ -36,6 +36,7 @@ COGS = [
     "cogs.cockfight",
     "cogs.shop",
     "cogs.spinfrenzy",
+    "cogs.adminpanel",
 ]
 
 

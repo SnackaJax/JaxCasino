@@ -78,8 +78,9 @@ docker compose restart jaxcasino
 ```
 What goes where:
 - The database (`gamble.db`) and the log files are kept in the `jaxcasino-data` volume, and the voice models in `jaxcasino-voices`, so they survive rebuilds and updates.
-- `docker-compose.yml` sets `DATABASE_PATH`, `LOG_DIR` and `ACTIVITY_HOST` itself, so leave those as they are in `.env`.
+- `docker-compose.yml` sets `DATABASE_PATH`, `LOG_DIR`, `ACTIVITY_HOST` and `ADMIN_PANEL_HOST` itself, so leave those as they are in `.env`.
 - The Activity's web server is published on `127.0.0.1:8765`: reachable from this machine only, for your tunnel or reverse proxy.
+- The admin panel (when it's on) is published on `127.0.0.1:8780`, for your own browser only.
 
 **Updating:** download the new release (or `git pull`), then `docker compose up -d --build`. Your database is kept.
 
@@ -110,6 +111,17 @@ The Activity is the casino that opens inside Discord voice calls (the screenshot
 4. Restart the bot and use `/casino` in a server.
 
 If you don't want the Activity at all, set `ACTIVITY_ENABLED=0` in `.env`.
+
+### 5. (Optional) The admin panel
+A website for you, the bot's owner, served by the bot on your own machine: stats and graphs, a pie chart of who holds the credits, every player's balance in a filterable list, and balance editing (set an exact amount, add or remove, with an optional note). Edits made there are never announced in Discord; they're logged in the panel and count as admin changes in `/serverstats`.
+1. In `.env`, set `ADMIN_PANEL_ENABLED=1` and pick a password for `ADMIN_PANEL_PASSWORD`.
+2. Docker: `docker compose up -d --build` (the image builds the page). Python: the page has to be built once with [Node.js](https://nodejs.org) 20 or newer: `cd admin_panel/web`, `npm ci`, `npm run build` (again after every update).
+3. Restart the bot and open <http://127.0.0.1:8780>.
+
+It only listens on this machine (`127.0.0.1`; in Docker the port is published on `127.0.0.1` only). Don't point a tunnel or reverse proxy at it. Change the password in `.env` and restart to sign everyone out.
+
+
+**Working on the panel:** `python -m admin_panel.devserver --seed --live` runs it without Discord at <http://127.0.0.1:8781> (password `dev`) on a test database (`admin_dev.db`) with made-up players, and keeps playing made-up games for the Live view. For hot reload while editing the page, also run `npm run dev` in `admin_panel/web` and open <http://localhost:5180>. The page is React with [shadcn/ui](https://ui.shadcn.com) and the [OpenStatus data-table-filters](https://data-table.openstatus.dev) blocks (MIT), dark mode only.
 
 ## Commands
 

@@ -19,12 +19,17 @@ services:
       LOG_DIR: /data/logs
       ACTIVITY_HOST: 0.0.0.0
       ACTIVITY_PORT: "8765"
+      # the admin panel (only when ADMIN_PANEL_ENABLED=1 in .env), reachable from this machine only, see ports below
+      ADMIN_PANEL_HOST: 0.0.0.0
+      ADMIN_PANEL_PORT: "8780"
     volumes:
       - jaxcasino-data:/data            # gamble.db and logs/
       - jaxcasino-voices:/app/voices    # the dealer's voice models (download_voices.py)
     ports:
       # The Activity's web server, on this machine only. Point your HTTPS tunnel or reverse proxy at it.
       - "127.0.0.1:8765:8765"
+      # The admin panel, on this machine only (http://127.0.0.1:8780). Never point a tunnel at it.
+      - "127.0.0.1:8780:8780"
     stop_signal: SIGINT
     stop_grace_period: 20s
     logging:

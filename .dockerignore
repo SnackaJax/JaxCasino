@@ -10,6 +10,10 @@
 !cogs/
 !utils/
 !activity/
+!admin_panel/
 !voices/README.md
 **/__pycache__
 **/*.py[cod]
+# the admin panel's page is built inside the image (see the Dockerfile)
+admin_panel/static
+admin_panel/web/node_modules

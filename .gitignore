@@ -33,3 +33,12 @@ research/
 .idea/
 Thumbs.db
 .DS_Store
+
+# Agent skills installed with "npx skills add" (local tooling)
+.agents/
+skills-lock.json
+
+# The admin panel's page is built from admin_panel/web (npm run build, or the Docker image builds it), so neither
+# the build output nor the installed packages go on GitHub.
+admin_panel/static/
+admin_panel/web/node_modules/

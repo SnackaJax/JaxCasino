@@ -659,19 +659,20 @@ class Database:
         cur = await self.conn.execute("SELECT * FROM lottery WHERE draw_at <= ?", (time.time(),))
         return await cur.fetchall()
 
-    async def finish_lottery(self, guild_id: int, winner_id: int | None, pot: int) -> None:
-        """Pays the winner (if any), clears tickets and schedules the next draw."""
+    async def finish_lottery(self, guild_id: int, winner_id: int | None, pot: int, bonus: int = 0) -> None:
+        """Pays the winner (if any) the ticket pot plus the bank's bonus, clears tickets and schedules the next
+        draw. The bonus comes from the house, so only `pot` leaves the lottery table."""
         async with self.lock:
             if winner_id is not None:
                 await self._ensure(guild_id, winner_id)
                 await self.conn.execute(
                     "UPDATE users SET balance = balance + ? WHERE guild_id=? AND user_id=?",
-                    (pot, guild_id, winner_id),
+                    (pot + bonus, guild_id, winner_id),
                 )
                 await self.conn.execute(
                     "UPDATE lottery SET pot = pot - ? WHERE guild_id=?", (pot, guild_id)
                 )
-                await self._log_game(guild_id, winner_id, "lottery", 0, pot)
+                await self._log_game(guild_id, winner_id, "lottery", 0, pot + bonus)
             await self.conn.execute("DELETE FROM lottery_tickets WHERE guild_id=?", (guild_id,))
             await self.conn.execute(
                 "UPDATE lottery SET draw_at=? WHERE guild_id=?",

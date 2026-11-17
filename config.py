@@ -65,6 +65,9 @@ HEIST_BUYS = os.getenv("HEIST_BUYS", "1").strip().lower() not in ("0", "false", 
 
 LOTTERY_TICKET_PRICE = _int("LOTTERY_TICKET_PRICE", 100)
 LOTTERY_INTERVAL = _int("LOTTERY_INTERVAL_HOURS", 24) * 60 * 60
+# Credits the bank (the house) adds to every lottery draw's jackpot, on top of the ticket sales. Only paid out when
+# a round sold tickets; a round without tickets has no draw, and the bonus doesn't carry over (0 = no bonus).
+LOTTERY_BANK_BONUS = max(0, _int("LOTTERY_BANK_BONUS", 0))
 
 # Cockfight: your chicken's win chance starts at COCKFIGHT_BASE_CHANCE and grows by COCKFIGHT_CHANCE_STEP
 # with every fight it wins, up to COCKFIGHT_MAX_CHANCE. A win pays 2x minus the house edge; a loss kills it.

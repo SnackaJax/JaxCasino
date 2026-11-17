@@ -9,6 +9,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+import config
 from utils.economy import fmt
 from utils.stats_image import StatsInfo, render_stats, short
 from utils.views import OwnedView
@@ -146,7 +147,7 @@ def build_embed(period: str, st: dict) -> discord.Embed:
         if s["amount"] < 0:
             eco.append(f"🛒 **Shop:** {fmt(-s['amount'])} spent")
     if st["lottery_pot"]:
-        eco.append(f"🎟️ **Lottery jackpot:** {fmt(st['lottery_pot'])}")
+        eco.append(f"🎟️ **Lottery jackpot:** {fmt(st['lottery_pot'] + config.LOTTERY_BANK_BONUS)}")
     embed.add_field(name="Economy", value="\n".join(eco)[:1024], inline=False)
     embed.set_image(url="attachment://serverstats.png")
     embed.set_footer(text="In circulation, richest and jackpot are live totals; everything else covers the period.")

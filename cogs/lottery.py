@@ -21,6 +21,14 @@ def winner_tag(winner: int | None) -> dict:
             "allowed_mentions": discord.AllowedMentions(users=[discord.Object(winner)], roles=False, everyone=False)}
 
 
+def jackpot_text(pot: int) -> str:
+    """The jackpot a round pays: its ticket sales plus the bank's bonus (LOTTERY_BANK_BONUS), with the bonus named."""
+    bonus = config.LOTTERY_BANK_BONUS
+    if not bonus:
+        return fmt(pot)
+    return f"{fmt(pot + bonus)} (incl. {fmt(bonus)} from the bank)"
+
+
 class Lottery(commands.Cog):
     lottery = app_commands.Group(name="lottery", description="The server lottery.")
 
@@ -44,13 +52,15 @@ class Lottery(commands.Cog):
         weights = [r["tickets"] for r in tickets]
         winner = rng.choices(users, weights=weights)[0]
         pot = state["pot"]
-        await self.bot.db.finish_lottery(guild_id, winner, pot)
+        bonus = config.LOTTERY_BANK_BONUS
+        await self.bot.db.finish_lottery(guild_id, winner, pot, bonus)
         total = sum(weights)
         mine = weights[users.index(winner)]
-        log.info("Lottery in guild %s: user %s won %s with %d of %d tickets", guild_id, winner, f"{pot:,}", mine, total)
+        log.info("Lottery in guild %s: user %s won %s (bank bonus %s) with %d of %d tickets",
+                 guild_id, winner, f"{pot + bonus:,}", f"{bonus:,}", mine, total)
         return discord.Embed(
             title="🎉 Lottery Draw!", color=discord.Color.gold(),
-            description=(f"<@{winner}> won the jackpot of {fmt(pot)}!\n"
+            description=(f"<@{winner}> won the jackpot of {jackpot_text(pot)}!\n"
                          f"They held {mine:,} of {total:,} tickets ({mine / total * 100:.1f}% chance).\n\n"
                          f"A new round has started — `/lottery buy` to enter.")), winner
 
@@ -86,7 +96,7 @@ class Lottery(commands.Cog):
         embed = discord.Embed(
             title="🎟️ Tickets bought", color=discord.Color.green(),
             description=(f"{interaction.user.mention} bought **{tickets:,}** ticket(s) for {fmt(tickets * price)}.\n"
-                         f"Jackpot is now {fmt(state['pot'])} · draw <t:{int(state['draw_at'])}:R>"))
+                         f"Jackpot is now {jackpot_text(state['pot'])} · draw <t:{int(state['draw_at'])}:R>"))
         await interaction.response.send_message(**tag(interaction.user), embed=embed)
 
     @lottery.command(name="info", description="Show the current jackpot and your tickets.")
@@ -96,7 +106,7 @@ class Lottery(commands.Cog):
         total = sum(r["tickets"] for r in tickets)
         mine = next((r["tickets"] for r in tickets if r["user_id"] == interaction.user.id), 0)
         embed = discord.Embed(title="🎟️ Lottery", color=discord.Color.gold())
-        embed.add_field(name="Jackpot", value=fmt(state["pot"]))
+        embed.add_field(name="Jackpot", value=jackpot_text(state["pot"]))
         embed.add_field(name="Next draw", value=f"<t:{int(state['draw_at'])}:R>")
         embed.add_field(name="Ticket price", value=fmt(config.LOTTERY_TICKET_PRICE))
         embed.add_field(name="Tickets sold", value=f"{total:,} ({len(tickets)} players)")

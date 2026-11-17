@@ -56,6 +56,7 @@ Edit `.env`:
 - `GAMBLING_CHANNEL_IDS`: the channel(s) where games are allowed. You can also set these from Discord with `/config channel-add`.
 - `DISCORD_CLIENT_SECRET`: only needed for the Activity (the casino in voice calls), see [step 4](#4-optional-the-activity-casino).
 - `LOG_LEVEL` (optional): how much the console shows: `INFO` (default) or `DEBUG` for everything.
+- `LOTTERY_BANK_BONUS` (optional): credits the bank adds to every lottery draw's jackpot, on top of ticket sales (default `0`). It's only paid when the round sold tickets and doesn't carry over; `/lottery info` shows it as part of the jackpot.
 
 Never share or commit `.env`: anyone with the bot token can take over the bot.
 
@@ -157,7 +158,7 @@ Bets and payments accept any whole amount (`1234`, `1,234,567`), plus optional s
 | `/slots` | **Cosmic Lab**: 6 reels × 4 rows, 20 paylines, wilds, and free spins with sticky wilds. **Spin again** repeats your bet; `/paytable` (or the button) shows the pays and all 20 lines |
 | `/duel` | Challenge a player: coinflip, dice or rock-paper-scissors |
 | `/horserace` | Open a race; everyone bets on horses with fixed odds |
-| `/lottery buy / info` | Shared jackpot, drawn every 24h |
+| `/lottery buy / info` | Shared jackpot, drawn every 24h. The bank can add a bonus to every draw (`LOTTERY_BANK_BONUS` in `.env`) |
 | `/poker create` | Multiplayer Texas Hold'em table (Join / Leave / Start buttons) |
 | `/casino [game]` | Opens the bot's Discord Activity (the casino) in a voice call or text channel: a game menu with **Spin Frenzy** (a live wheel game show), **Banger Bash** (a 5×3 barbecue slot), **Poker** (Texas Hold'em tables), **Blackjack** (live tables against the dealer) and, once switched on, **Reef Rush** (a 7×7 cluster slot) and **Raccoon Heist** (an 8×8 vault-raid slot). Pick a `game` to go straight to it. See below |
 | `/bangerbash-paytable` | Banger Bash's pays, features and bonus rules. A chat version of Banger Bash also exists but is switched off; set `BANGERBASH_IN_CHAT=1` in `.env` to add `/bangerbash <bet>`, which plays it in the text channel |

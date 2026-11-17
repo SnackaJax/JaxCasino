@@ -519,6 +519,13 @@ function handGeom(seat, k) {
   if (k > 1) cwS = Math.min(cwS, spread * 0.86);
   return Array.from({ length: k }, (_, j) => ({ hx: sx + (j - (k - 1) / 2) * spread, baseY: sy - G.R - 6 - cwS * 0.7, cwS }));
 }
+// How far each card of a hand sits above the one before: a fifth of a card, but less on a long hand that would
+// otherwise run off the top of the table (the end seats sit high up), so the top card and its total stay in view.
+function handRise(g, m) {
+  if (m < 2) return 0;
+  const room = g.baseY - g.cwS * 0.7 - 10 - 14;   // the first card's top down to the total's centre, 14px under the edge
+  return clamp(room / (m - 1), 0, g.cwS * 0.2);
+}
 const wobble = (a, b, c) => (((a * 37 + b * 11 + c * 7) % 7) - 3) * 0.9;
 // every card on the table, where it goes: [{ key, x, y, w, rot, card, seat, hand, i }]
 function cardSpots(st) {
@@ -531,11 +538,11 @@ function cardSpots(st) {
     if (!s || !s.hands.length) return;
     const geo = handGeom(si, s.hands.length);
     s.hands.forEach((h, j) => {
-      const g = geo[j], m = h.cards.length;
+      const g = geo[j], m = h.cards.length, rise = handRise(g, m);
       h.cards.forEach((c, i) => {
         const sideways = h.doubled && i === 2;   // a doubled hand's card lies across the others
         out.push({ key: `s:${si}:${j}:${i}`, x: g.hx + (i - (m - 1) / 2) * g.cwS * 0.3 + (sideways ? g.cwS * 0.1 : 0),
-          y: g.baseY - i * g.cwS * 0.2 - (sideways ? g.cwS * 0.1 : 0), w: g.cwS,
+          y: g.baseY - i * rise - (sideways ? g.cwS * 0.1 : 0), w: g.cwS,
           rot: sideways ? 90 : wobble(si, j, i), card: c, seat: si, hand: j, i });
       });
     });
@@ -602,15 +609,15 @@ function renderBadges(st, opts = {}) {
     const geo = handGeom(si, s.hands.length);
     s.hands.forEach((h, j) => {
       if (!h.cards.length || hiddenHand(si, j)) return;
-      const g = geo[j], m = h.cards.length;
-      const topY = g.baseY - (m - 1) * g.cwS * 0.2 - g.cwS * 0.7 - 10;
+      const g = geo[j], m = h.cards.length, rise = handRise(g, m);
+      const topY = g.baseY - (m - 1) * rise - g.cwS * 0.7 - 10;
       const bj = h.result === 'blackjack';
       want.set(`t:${si}:${j}`, { x: g.hx, y: topY, text: bj ? 'BJ' : h.soft ? `${h.total - 10}/${h.total}` : String(h.total),
         cls: bj ? 'bj' : h.total > 21 ? 'bust' : h.total === 21 ? 'n21' : '' });
       const showRes = h.result && (st.phase === 'settle' || h.result === 'bust' || h.result === 'blackjack') && !opts.noStamps;
       if (showRes) {
         const label = { blackjack: 'BLACKJACK', win: h.payout ? `WIN` : 'WIN', push: 'PUSH', lose: 'LOSE', bust: 'BUST' }[h.result];
-        stamps.set(`r:${si}:${j}`, { x: g.hx, y: g.baseY - (m - 1) * g.cwS * 0.1, text: label, cls: h.result });
+        stamps.set(`r:${si}:${j}`, { x: g.hx, y: g.baseY - (m - 1) * rise / 2, text: label, cls: h.result });
       }
     });
   });

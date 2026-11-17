@@ -7,12 +7,14 @@ import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { ColGroup, ResizeHandle, useColumnWidths } from "@/app/resizable-table"
 import { cn } from "@/lib/utils"
 
 const ACTION_LABEL = { set: "Set", add: "Added", remove: "Removed" } as const
 
 /** Every balance change made in this panel, newest first, with its note. */
 export function EditsPage({ guild }: { guild: Guild }) {
+  const cols = useColumnWidths("edits", [160, 200, 150, 120, 120, 120, 280])
   const edits = useQuery({
     queryKey: ["edits", guild.id],
     queryFn: () => api.get<Edit[]>(`/api/edits?guild=${guild.id}&limit=500`),
@@ -20,7 +22,7 @@ export function EditsPage({ guild }: { guild: Guild }) {
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="mx-auto flex max-w-6xl flex-col gap-4 p-4 md:p-6">
+      <div className="mx-auto flex w-full max-w-[2400px] flex-col gap-4 p-4 md:p-6 2xl:px-8">
         <Card>
           <CardHeader>
             <CardTitle>Balance edits</CardTitle>
@@ -35,16 +37,17 @@ export function EditsPage({ guild }: { guild: Guild }) {
             ) : !edits.data?.length ? (
               <p className="text-muted-foreground px-6 text-sm">No edits yet.</p>
             ) : (
-              <Table>
+              <Table ref={cols.tableRef} style={cols.tableStyle} className="[&_td]:overflow-hidden [&_td]:text-ellipsis [&_th]:overflow-hidden">
+      <ColGroup widths={cols.widths} />
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="pl-6">When</TableHead>
-                    <TableHead>Player</TableHead>
-                    <TableHead>Action</TableHead>
-                    <TableHead className="text-right">Before</TableHead>
-                    <TableHead className="text-right">After</TableHead>
-                    <TableHead className="text-right">Change</TableHead>
-                    <TableHead className="pr-6">Note</TableHead>
+                    <TableHead className="relative pl-6">When<ResizeHandle onPointerDown={cols.startResize(0)} onReset={cols.reset} /></TableHead>
+                    <TableHead className="relative">Player<ResizeHandle onPointerDown={cols.startResize(1)} onReset={cols.reset} /></TableHead>
+                    <TableHead className="relative">Action<ResizeHandle onPointerDown={cols.startResize(2)} onReset={cols.reset} /></TableHead>
+                    <TableHead className="relative text-right">Before<ResizeHandle onPointerDown={cols.startResize(3)} onReset={cols.reset} /></TableHead>
+                    <TableHead className="relative text-right">After<ResizeHandle onPointerDown={cols.startResize(4)} onReset={cols.reset} /></TableHead>
+                    <TableHead className="relative text-right">Change<ResizeHandle onPointerDown={cols.startResize(5)} onReset={cols.reset} /></TableHead>
+                    <TableHead className="relative pr-6">Note<ResizeHandle onPointerDown={cols.startResize(6)} onReset={cols.reset} /></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>

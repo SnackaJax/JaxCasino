@@ -4,7 +4,7 @@ import { BroadcastIcon } from "@phosphor-icons/react"
 import type { ColumnDef } from "@tanstack/react-table"
 
 import { api, type ActivityPage as Page, type ActivityRow, type Guild, type Person } from "@/app/api"
-import { credits, dateTime, displayName, GAME_NAMES, gameName, MONEY_NAMES, moneyName, signed } from "@/app/format"
+import { GAME_NAMES, MONEY_NAMES, credits, dateTime, displayName, gameName, moneyName, resizable, signed } from "@/app/format"
 import { PlayerAvatar } from "@/app/player-avatar"
 import { TimelineChart, type TimelineChartSeries } from "@/components/data-table/data-table-chart/timeline-chart"
 import { DataTableFilterCommand } from "@/components/data-table/data-table-filter-command"
@@ -157,7 +157,7 @@ const tableSchema = createTableSchema({
 const filterSchema = generateFilterSchema(tableSchema.definition)
 const filterFields = generateFilterFields<Row>(tableSchema.definition)
 const defaultColumnVisibility = getDefaultColumnVisibility(tableSchema.definition)
-const columns: ColumnDef<DataTableFeatures, Row>[] = generateColumns<Row>(tableSchema.definition)
+const columns: ColumnDef<DataTableFeatures, Row>[] = resizable(generateColumns<Row>(tableSchema.definition), ["result"])
 
 function toRow(r: ActivityRow, people: Record<string, Person>): Row {
   const who = r.user_id ? (people[r.user_id] ?? { name: null, avatar: null, in_server: false }) : null

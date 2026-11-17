@@ -120,11 +120,14 @@ export type PlayerDetail = {
     per_game: { game: string; plays: number; wagered: number; net: number }[]
     best: { game: string; wagered: number; payout: number; profit: number; ts: number } | null
     worst: { game: string; wagered: number; payout: number; loss: number; ts: number } | null
-    money: Record<string, { kind: string; n: number; amount: number }>
+    /** keyed by kind; "received" (payments from other players) has no kind field of its own */
+    money: Record<string, { kind?: string; n: number; amount: number }>
   }
-  history: [number, number][]
   edits: Omit<Edit, keyof Person | "user_id">[]
 }
+
+/** A player's balance between two unix times, as [ts, balance] points. */
+export type BalanceWindow = { from: number; to: number; points: [number, number][] }
 
 export type ActivityRow = {
   id: string

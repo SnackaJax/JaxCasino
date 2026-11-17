@@ -131,14 +131,40 @@ async def overview(db: Database, guild_id: int, period: str) -> dict:
 
 async def player_detail(db: Database, guild_id: int, user_id: int) -> dict:
     stats = await db.player_stats(guild_id, user_id)
-    before, history = await db.balance_history(guild_id, user_id, 0)
-    points = [[r["ts"], r["balance"]] for r in history]
-    if len(points) > 600:   # keep the shape, drop the detail
-        step = len(points) / 600
-        points = [points[int(i * step)] for i in range(600)] + [points[-1]]
     edits = await _all(db, """SELECT id, action, amount, before, after, note, ts FROM admin_log
                               WHERE guild_id=? AND user_id=? ORDER BY ts DESC LIMIT 20""", (guild_id, user_id))
-    return {"stats": stats, "history": points, "edits": edits}
+    return {"stats": stats, "edits": edits}   # balance over time: balance_window
+
+
+async def balance_window(db: Database, guild_id: int, user_id: int, start: float, end: float,
+                         limit: int = 600) -> list[list]:
+    """A player's balance from `start` to `end` (unix times; start 0 = from the first record) as [ts, balance]
+    points, oldest first. The line starts at `start` with the balance it had then and runs on to `end`. Thinned to
+    about `limit` time slots, keeping each slot's lowest and highest balance so peaks and dips survive."""
+    before, rows = await db.balance_history(guild_id, user_id, start)
+    points = [[r["ts"], r["balance"]] for r in rows if r["ts"] <= end]
+    last = points[-1][1] if points else before
+    if start and before is not None:
+        points.insert(0, [start, before])
+    if len(points) > limit * 2:
+        t0, t1 = points[0][0], points[-1][0]
+        width = (t1 - t0) / limit or 1
+        thinned, slot, slot_no = [], [], None
+        for p in points:
+            n = int((p[0] - t0) / width)
+            if slot and n != slot_no:
+                lo, hi = min(slot, key=lambda x: x[1]), max(slot, key=lambda x: x[1])
+                thinned += sorted({tuple(lo), tuple(hi), tuple(slot[-1])})
+                slot = []
+            slot_no = n
+            slot.append(p)
+        if slot:
+            lo, hi = min(slot, key=lambda x: x[1]), max(slot, key=lambda x: x[1])
+            thinned += sorted({tuple(lo), tuple(hi), tuple(slot[-1])})
+        points = [list(p) for p in thinned]
+    if last is not None and (not points or points[-1][0] < end):
+        points.append([end, last])
+    return points
 
 
 async def edits(db: Database, guild_id: int, limit: int = 50) -> list[dict]:

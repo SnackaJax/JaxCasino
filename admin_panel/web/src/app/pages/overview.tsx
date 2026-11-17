@@ -14,6 +14,7 @@ import { ChartContainer, ChartTooltip, type ChartConfig } from "@/components/ui/
 import { Skeleton } from "@/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
+import { ColGroup, ResizeHandle, useColumnWidths } from "@/app/resizable-table"
 import { cn } from "@/lib/utils"
 
 const PERIODS: { value: Period; label: string }[] = [
@@ -41,15 +42,15 @@ export function OverviewPage({ guild }: { guild: Guild }) {
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="mx-auto flex max-w-7xl flex-col gap-4 p-4 md:p-6">
-        <header className="flex flex-wrap items-center justify-between gap-3">
+      <div className="mx-auto flex w-full max-w-[2400px] flex-col gap-4 p-4 md:p-6 2xl:px-8">
+        <header className="flex flex-wrap items-center justify-between gap-3 [&>*]:min-w-0">
           <div>
             <h1 className="text-lg font-semibold">{guild.name}</h1>
             <p className="text-muted-foreground text-xs">
               Overview · updated {overview.dataUpdatedAt ? ago(overview.dataUpdatedAt / 1000) : "…"}
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <ToggleGroup
               type="single"
               variant="outline"
@@ -61,7 +62,7 @@ export function OverviewPage({ guild }: { guild: Guild }) {
                 <ToggleGroupItem
                   key={p.value}
                   value={p.value}
-                  className="data-[state=on]:bg-primary data-[state=on]:text-primary-foreground px-3"
+                  className="data-[state=on]:bg-primary data-[state=on]:text-primary-foreground px-2 sm:px-3"
                 >
                   {p.label}
                 </ToggleGroupItem>
@@ -83,7 +84,7 @@ export function OverviewPage({ guild }: { guild: Guild }) {
 
         {overview.isError ? <p className="text-destructive text-sm">{String(overview.error.message)}</p> : null}
 
-        <section className="grid grid-cols-2 gap-3 lg:grid-cols-6">
+        <section className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
           <Kpi label="Credits held" value={o && compact(o.kpis.held)} hint={o && `${credits(o.kpis.in_play)} in play right now`} />
           <Kpi
             label="Players"
@@ -105,7 +106,7 @@ export function OverviewPage({ guild }: { guild: Guild }) {
           />
         </section>
 
-        <section className="grid gap-4 xl:grid-cols-[1.15fr_1fr]">
+        <section className="grid gap-4 xl:grid-cols-[1.15fr_1fr] 3xl:grid-cols-[1.1fr_1fr_1fr]">
           <Card>
             <CardHeader>
               <CardTitle>Money distribution</CardTitle>
@@ -126,25 +127,23 @@ export function OverviewPage({ guild }: { guild: Guild }) {
             </CardHeader>
             <CardContent>{o ? <CirculationChart points={o.circulation} /> : <Skeleton className="h-[280px] w-full" />}</CardContent>
           </Card>
+          <Card className="xl:col-span-2 3xl:col-span-1">
+            <CardHeader>
+              <CardTitle>Games per day</CardTitle>
+              <CardDescription>Won, lost and even games, with the credits wagered each day.</CardDescription>
+            </CardHeader>
+            <CardContent>{o ? <DailyChart daily={o.daily} /> : <Skeleton className="h-[220px] w-full" />}</CardContent>
+          </Card>
         </section>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Games per day</CardTitle>
-            <CardDescription>Won, lost and even games, with the credits bet each day.</CardDescription>
-          </CardHeader>
-          <CardContent>{o ? <DailyChart daily={o.daily} /> : <Skeleton className="h-[220px] w-full" />}</CardContent>
-        </Card>
-
-        <section className="grid gap-4 xl:grid-cols-[1.4fr_1fr]">
-          <Card>
+        <section className="grid items-start gap-4 xl:grid-cols-[1.4fr_1fr] 3xl:grid-cols-[1.6fr_1fr_1fr]">
+          <Card className="xl:row-span-2 3xl:row-span-1">
             <CardHeader>
               <CardTitle>Games</CardTitle>
-              <CardDescription>What was played in the period, by credits bet.</CardDescription>
+              <CardDescription>What was played in the period, by credits wagered.</CardDescription>
             </CardHeader>
             <CardContent className="px-0">{o ? <GamesTable games={o.games} /> : <Skeleton className="mx-6 h-40" />}</CardContent>
           </Card>
-          <div className="flex flex-col gap-4">
             <Card>
               <CardHeader>
                 <CardTitle>Credits outside games</CardTitle>
@@ -183,7 +182,6 @@ export function OverviewPage({ guild }: { guild: Guild }) {
                 )}
               </CardContent>
             </Card>
-          </div>
         </section>
       </div>
       <EditBalanceDialog guildId={guild.id} target={editing} onClose={() => setEditing(null)} />
@@ -213,7 +211,7 @@ function Kpi({
         ) : (
           <span
             className={cn(
-              "tabular text-2xl font-semibold tracking-tight",
+              "tabular truncate text-xl font-semibold tracking-tight sm:text-2xl",
               tone === "good" && "text-success",
               tone === "bad" && "text-error"
             )}
@@ -328,19 +326,21 @@ function Row({ color, label, value }: { color?: string; label: string; value: st
 }
 
 function GamesTable({ games }: { games: Overview["games"] }) {
+  const cols = useColumnWidths("overview-games", [170, 80, 80, 260, 90, 130])
   const played = games.filter((g) => g.wagered > 0)
   const max = Math.max(1, ...played.map((g) => g.wagered))
   if (!played.length) return <p className="text-muted-foreground px-6 text-sm">No games in this period.</p>
   return (
-    <Table>
+    <Table ref={cols.tableRef} style={cols.tableStyle} className="[&_td]:overflow-hidden [&_td]:text-ellipsis [&_th]:overflow-hidden">
+      <ColGroup widths={cols.widths} />
       <TableHeader>
         <TableRow>
-          <TableHead className="pl-6">Game</TableHead>
-          <TableHead className="text-right">Plays</TableHead>
-          <TableHead className="text-right">Players</TableHead>
-          <TableHead className="w-[30%]">Wagered</TableHead>
-          <TableHead className="text-right">Payback</TableHead>
-          <TableHead className="pr-6 text-right">House</TableHead>
+          <TableHead className="relative pl-6">Game<ResizeHandle onPointerDown={cols.startResize(0)} onReset={cols.reset} /></TableHead>
+          <TableHead className="relative text-right">Plays<ResizeHandle onPointerDown={cols.startResize(1)} onReset={cols.reset} /></TableHead>
+          <TableHead className="relative text-right">Players<ResizeHandle onPointerDown={cols.startResize(2)} onReset={cols.reset} /></TableHead>
+          <TableHead className="relative">Wagered<ResizeHandle onPointerDown={cols.startResize(3)} onReset={cols.reset} /></TableHead>
+          <TableHead className="relative text-right">Payback<ResizeHandle onPointerDown={cols.startResize(4)} onReset={cols.reset} /></TableHead>
+          <TableHead className="relative pr-6 text-right">House<ResizeHandle onPointerDown={cols.startResize(5)} onReset={cols.reset} /></TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -377,15 +377,17 @@ function GamesTable({ games }: { games: Overview["games"] }) {
 }
 
 function MoneyTable({ money }: { money: Overview["money"] }) {
+  const cols = useColumnWidths("overview-money", [150, 80, 150, 150])
   if (!money.length) return <p className="text-muted-foreground px-6 text-sm">Nothing in this period.</p>
   return (
-    <Table>
+    <Table ref={cols.tableRef} style={cols.tableStyle} className="[&_td]:overflow-hidden [&_td]:text-ellipsis [&_th]:overflow-hidden">
+      <ColGroup widths={cols.widths} />
       <TableHeader>
         <TableRow>
-          <TableHead className="pl-6">Kind</TableHead>
-          <TableHead className="text-right">Times</TableHead>
-          <TableHead className="text-right">Added</TableHead>
-          <TableHead className="pr-6 text-right">Removed</TableHead>
+          <TableHead className="relative pl-6">Kind<ResizeHandle onPointerDown={cols.startResize(0)} onReset={cols.reset} /></TableHead>
+          <TableHead className="relative text-right">Times<ResizeHandle onPointerDown={cols.startResize(1)} onReset={cols.reset} /></TableHead>
+          <TableHead className="relative text-right">Added<ResizeHandle onPointerDown={cols.startResize(2)} onReset={cols.reset} /></TableHead>
+          <TableHead className="relative pr-6 text-right">Removed<ResizeHandle onPointerDown={cols.startResize(3)} onReset={cols.reset} /></TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>

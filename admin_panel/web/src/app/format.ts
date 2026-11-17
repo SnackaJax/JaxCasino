@@ -84,3 +84,13 @@ export function gameColor(key: string): string {
   const n = i >= 0 ? i : [...key].reduce((a, c) => a + c.charCodeAt(0), 0)
   return `var(--chart-${(n % 9) + 1})`
 }
+
+/** Every column can be dragged wider or narrower (the little status/result dots stay as they are). */
+export function resizable<T>(columns: T[], fixed: string[] = []): T[] {
+  return columns.map((c) => {
+    const col = c as { id?: string; accessorKey?: string }
+    const id = col.id ?? col.accessorKey ?? ""
+    // a column that wasn't resizable has its min and max pinned to its size: open them up
+    return fixed.includes(id) ? c : ({ ...c, enableResizing: true, minSize: 56, maxSize: 1200 } as T)
+  })
+}

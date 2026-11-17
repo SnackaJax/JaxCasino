@@ -1,17 +1,14 @@
 import * as React from "react"
 import { useQuery } from "@tanstack/react-query"
 import { PencilSimpleIcon } from "@phosphor-icons/react"
-import { Area, AreaChart, XAxis, YAxis } from "recharts"
 
 import { api, type Player, type PlayerDetail } from "@/app/api"
+import { BalanceChart } from "@/app/balance-chart"
 import { ago, compact, credits, gameColor, gameName, moneyName, pct, signed } from "@/app/format"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { ChartContainer, ChartTooltip, type ChartConfig } from "@/components/ui/chart"
 import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
-
-const historyConfig = { balance: { label: "Balance", color: "var(--chart-1)" } } satisfies ChartConfig
 
 /** One player's details in the side sheet: balance, history, games and the edits made to them. */
 export function PlayerSheet(props: { guildId: string; player: Player; onEdit: () => void }) {
@@ -46,7 +43,6 @@ function PlayerSheetBody({ guildId, player, onEdit }: { guildId: string; player:
     queryFn: () => api.get<PlayerDetail>(`/api/players/${player.id}?guild=${guildId}`),
   })
   const d = detail.data
-  const history = React.useMemo(() => (d?.history ?? []).map(([ts, balance]) => ({ ts: ts * 1000, balance })), [d])
 
   return (
     <div className="flex flex-col gap-5 p-4">
@@ -70,40 +66,7 @@ function PlayerSheetBody({ guildId, player, onEdit }: { guildId: string; player:
         <Badge variant="secondary">Active {ago(player.last_active)}</Badge>
       </div>
 
-      <section>
-        <h3 className="text-muted-foreground mb-2 text-xs">Balance over time</h3>
-        {detail.isLoading ? (
-          <Skeleton className="h-36 w-full" />
-        ) : history.length > 1 ? (
-          <ChartContainer config={historyConfig} className="aspect-auto h-36 w-full">
-            <AreaChart data={history} margin={{ left: 0, right: 4, top: 4 }}>
-              <defs>
-                <linearGradient id="fillBalance" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="var(--color-balance)" stopOpacity={0.35} />
-                  <stop offset="100%" stopColor="var(--color-balance)" stopOpacity={0.02} />
-                </linearGradient>
-              </defs>
-              <XAxis dataKey="ts" type="number" scale="time" domain={["dataMin", "dataMax"]} hide />
-              <YAxis tickFormatter={(v) => compact(v)} tickLine={false} axisLine={false} width={40} fontSize={10} />
-              <ChartTooltip
-                content={({ payload }) => {
-                  const p = payload?.[0]?.payload as { ts: number; balance: number } | undefined
-                  if (!p) return null
-                  return (
-                    <div className="bg-popover rounded-md border px-2 py-1.5 text-xs shadow-md">
-                      <div className="text-muted-foreground">{new Date(p.ts).toLocaleString()}</div>
-                      <div className="tabular font-medium">{credits(p.balance)}</div>
-                    </div>
-                  )
-                }}
-              />
-              <Area dataKey="balance" type="stepAfter" stroke="var(--color-balance)" strokeWidth={1.5} fill="url(#fillBalance)" isAnimationActive={false} />
-            </AreaChart>
-          </ChartContainer>
-        ) : (
-          <p className="text-muted-foreground text-xs">No history yet.</p>
-        )}
-      </section>
+      <BalanceChart guildId={guildId} playerId={player.id} />
 
       <section className="grid grid-cols-3 gap-2">
         <Stat label="Games" value={credits(player.games)} />

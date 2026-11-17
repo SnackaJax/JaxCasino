@@ -170,6 +170,11 @@ export function DataTableInfinite<TData extends RowData>({
       getColumnVisibilityKey(tableId),
       defaultColumnVisibility,
     );
+  // column widths dragged by the user, remembered per table like the order and visibility
+  const [columnSizing, setColumnSizing] = useLocalStorage<Record<string, number>>(
+    `${getColumnOrderKey(tableId)}-sizing`,
+    {},
+  );
   const tableRef = React.useRef<HTMLTableElement>(null);
 
   // Detect if a select column exists to enable multi-row selection
@@ -231,7 +236,9 @@ export function DataTableInfinite<TData extends RowData>({
         columnVisibility,
         rowSelection,
         columnOrder,
+        columnSizing,
       },
+      onColumnSizingChange: setColumnSizing,
       enableMultiRowSelection: hasSelectColumn,
       columnResizeMode: "onChange" as const,
       getRowId,
@@ -288,16 +295,24 @@ export function DataTableInfinite<TData extends RowData>({
     for (let i = 0; i < headers.length; i++) {
       const header = headers[i]!;
       // REMINDER: replace "." with "-" to avoid invalid CSS variable name (e.g. "timing.dns" -> "timing-dns")
-      colSizes[`--header-${header.id.replaceAll(".", "-")}-size`] =
-        `${header.getSize()}px`;
-      colSizes[`--col-${header.column.id.replaceAll(".", "-")}-size`] =
-        `${header.column.getSize()}px`;
+      // the remembered widths (columnSizing) reach the table's own state a render later, so read them directly
+      const def = header.column.columnDef;
+      const saved = columnSizing[header.column.id];
+      const size =
+        saved === undefined
+          ? header.column.getSize()
+          : Math.min(def.maxSize ?? Infinity, Math.max(def.minSize ?? 20, saved));
+      colSizes[`--header-${header.id.replaceAll(".", "-")}-size`] = `${size}px`;
+      colSizes[`--col-${header.column.id.replaceAll(".", "-")}-size`] = `${size}px`;
     }
     return colSizes;
   }, [
     table.state.columnResizing,
     table.state.columnSizing,
     table.state.columnVisibility,
+    // the widths are kept outside the table (remembered in the browser): recompute when they change
+    columnSizing,
+    columnVisibility,
   ]);
 
   useHotKey(() => {

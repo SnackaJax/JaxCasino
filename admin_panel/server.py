@@ -14,7 +14,8 @@ Routes
   GET  /api/guilds                   servers with players
   GET  /api/overview?guild=&period=  stats for the dashboard (period: 24h, 7d, 30d, all)
   GET  /api/players?guild=           every player with balance and totals
-  GET  /api/players/{id}?guild=      one player's history, games and admin edits
+  GET  /api/players/{id}?guild=      one player's stats, games and admin edits
+  GET  /api/players/{id}/history?guild=&from=&to=   their balance over that time (unix times)
   POST /api/players/{id}/balance     {guild, action: set|add|remove, amount, note?}; nothing is posted in Discord
   GET  /api/edits?guild=             the latest balance edits made in the panel
   GET  /api/activity?guild=&before=&after=   games and other credit movements, newest first
@@ -210,6 +211,21 @@ class AdminPanel:
         data["player"] = {"id": str(uid), **self.who(gid, uid)}
         return web.json_response(data)
 
+    async def player_history(self, request: web.Request) -> web.Response:
+        gid, uid = self.guild_arg(request), self.user_arg(request)
+        if not await queries.player_exists(self.db, gid, uid):
+            raise web.HTTPNotFound(text="no such player")
+        now = time.time()
+        try:
+            start = max(0.0, float(request.query.get("from") or 0))
+            end = min(now, float(request.query.get("to") or now))
+        except ValueError:
+            raise web.HTTPBadRequest(text="from and to are unix times")
+        if end <= start:
+            raise web.HTTPBadRequest(text="to must be after from")
+        points = await queries.balance_window(self.db, gid, uid, start, end)
+        return web.json_response({"from": start, "to": end, "points": points})
+
     async def edit_balance(self, request: web.Request) -> web.Response:
         uid = self.user_arg(request)
         try:
@@ -296,6 +312,7 @@ class AdminPanel:
         r.add_get("/api/overview", self.overview)
         r.add_get("/api/players", self.players)
         r.add_get("/api/players/{user_id}", self.player)
+        r.add_get("/api/players/{user_id}/history", self.player_history)
         r.add_post("/api/players/{user_id}/balance", self.edit_balance)
         r.add_get("/api/edits", self.edits)
         r.add_get("/api/activity", self.activity)

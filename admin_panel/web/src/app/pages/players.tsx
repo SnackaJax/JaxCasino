@@ -5,7 +5,7 @@ import type { ColumnDef } from "@tanstack/react-table"
 
 import { api, type Guild, type Player } from "@/app/api"
 import { EditBalanceDialog, type EditTarget } from "@/app/edit-balance"
-import { ago, compact, credits, displayName, gameColor, gameName, pct, signed } from "@/app/format"
+import { ago, compact, credits, displayName, gameColor, gameName, pct, resizable, signed } from "@/app/format"
 import { PlayerAvatar } from "@/app/player-avatar"
 import { PlayerSheet } from "@/app/player-sheet"
 import { DataTableFilterCommand } from "@/components/data-table/data-table-filter-command"
@@ -195,7 +195,7 @@ const filterSchema = generateFilterSchema(tableSchema.definition)
 const filterFields = generateFilterFields<PlayerRow>(tableSchema.definition)
 const defaultColumnVisibility = getDefaultColumnVisibility(tableSchema.definition)
 const columns: ColumnDef<DataTableFeatures, PlayerRow>[] = [
-  ...generateColumns<PlayerRow>(tableSchema.definition),
+  ...resizable(generateColumns<PlayerRow>(tableSchema.definition), ["status"]),
   gameMixColumn(),
 ]
 
@@ -281,11 +281,11 @@ function gameMixColumn(): ColumnDef<DataTableFeatures, PlayerRow> {
         </HoverCard>
       )
     },
-    enableResizing: false,
+    enableResizing: true,
     enableSorting: false,
     size: 160,
-    minSize: 160,
-    maxSize: 160,
+    minSize: 100,
+    maxSize: 600,
     meta: { label: "Games played" },
   }
 }

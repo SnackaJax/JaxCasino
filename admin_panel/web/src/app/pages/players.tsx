@@ -116,6 +116,20 @@ const tableSchema = createTableSchema({
     .defaultOpen()
     .sortable()
     .size(150),
+  wagered: col
+    .number()
+    .label("Wagered")
+    .description("all time")
+    .display("custom", {
+      cell: (v: unknown) => (
+        <span className="tabular" title={`${credits(v as number)} wagered in total`}>
+          {compact(v as number)}
+        </span>
+      ),
+    })
+    .filterable("slider", { min: 0, max: 1000 })
+    .sortable()
+    .size(100),
   share: col
     .number()
     .label("Share")
@@ -142,13 +156,6 @@ const tableSchema = createTableSchema({
     .filterable("slider", { min: 0, max: 1000 })
     .sortable()
     .size(80),
-  wagered: col
-    .number()
-    .label("Bet")
-    .display("custom", { cell: (v: unknown) => <span className="tabular">{compact(v as number)}</span> })
-    .filterable("slider", { min: 0, max: 1000 })
-    .sortable()
-    .size(90),
   net: col
     .number()
     .label("Net")

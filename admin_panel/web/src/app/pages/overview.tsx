@@ -91,7 +91,7 @@ export function OverviewPage({ guild }: { guild: Guild }) {
             hint={o && `${o.kpis.active_day} active today · ${o.kpis.active_week} this week`}
           />
           <Kpi label="Games played" value={o && compact(o.kpis.games)} hint={o && `${o.kpis.players} players took part`} />
-          <Kpi label="Credits bet" value={o && compact(o.kpis.wagered)} hint={o && `${compact(o.kpis.paid)} paid back`} />
+          <Kpi label="Wagered" value={o && compact(o.kpis.wagered)} hint={o && `${compact(o.kpis.paid)} paid back`} />
           <Kpi
             label="House result"
             value={o && signed(o.kpis.wagered - o.kpis.paid)}
@@ -303,7 +303,7 @@ function DailyChart({ daily }: { daily: Overview["daily"] }) {
                 <Row color="var(--error)" label="Lost" value={credits(d.lost)} />
                 <div className="border-t pt-1" />
                 <Row label="Games" value={credits(games)} />
-                <Row label="Bet" value={credits(d.wagered)} />
+                <Row label="Wagered" value={credits(d.wagered)} />
                 <Row label="House" value={signed(d.wagered - d.paid)} />
               </div>
             )
@@ -338,7 +338,7 @@ function GamesTable({ games }: { games: Overview["games"] }) {
           <TableHead className="pl-6">Game</TableHead>
           <TableHead className="text-right">Plays</TableHead>
           <TableHead className="text-right">Players</TableHead>
-          <TableHead className="w-[30%]">Bet</TableHead>
+          <TableHead className="w-[30%]">Wagered</TableHead>
           <TableHead className="text-right">Payback</TableHead>
           <TableHead className="pr-6 text-right">House</TableHead>
         </TableRow>

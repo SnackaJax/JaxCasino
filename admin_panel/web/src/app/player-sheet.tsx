@@ -14,7 +14,33 @@ import { cn } from "@/lib/utils"
 const historyConfig = { balance: { label: "Balance", color: "var(--chart-1)" } } satisfies ChartConfig
 
 /** One player's details in the side sheet: balance, history, games and the edits made to them. */
-export function PlayerSheet({ guildId, player, onEdit }: { guildId: string; player: Player; onEdit: () => void }) {
+export function PlayerSheet(props: { guildId: string; player: Player; onEdit: () => void }) {
+  // a value the sheet doesn't expect breaks only the sheet, not the whole page
+  return (
+    <SheetBoundary key={props.player.id}>
+      <PlayerSheetBody {...props} />
+    </SheetBoundary>
+  )
+}
+
+class SheetBoundary extends React.Component<{ children: React.ReactNode }, { failed: boolean }> {
+  state = { failed: false }
+  static getDerivedStateFromError() {
+    return { failed: true }
+  }
+  componentDidCatch(error: unknown) {
+    console.error("Player sheet:", error)
+  }
+  render() {
+    return this.state.failed ? (
+      <p className="text-muted-foreground p-4 text-xs">Couldn't show this player's details.</p>
+    ) : (
+      this.props.children
+    )
+  }
+}
+
+function PlayerSheetBody({ guildId, player, onEdit }: { guildId: string; player: Player; onEdit: () => void }) {
   const detail = useQuery({
     queryKey: ["player", guildId, player.id],
     queryFn: () => api.get<PlayerDetail>(`/api/players/${player.id}?guild=${guildId}`),
@@ -82,7 +108,7 @@ export function PlayerSheet({ guildId, player, onEdit }: { guildId: string; play
       <section className="grid grid-cols-3 gap-2">
         <Stat label="Games" value={credits(player.games)} />
         <Stat label="Win rate" value={pct(player.wins, player.games, 0)} />
-        <Stat label="Bet" value={compact(player.wagered)} />
+        <Stat label="Wagered" value={compact(player.wagered)} title={`${credits(player.wagered)} wagered in total`} />
         <Stat label="Paid back" value={compact(player.won)} />
         <Stat label="Net" value={signed(player.net)} tone={player.net > 0 ? "good" : player.net < 0 ? "bad" : undefined} />
         <Stat label="Best win" value={compact(player.biggest_win)} />
@@ -115,10 +141,10 @@ export function PlayerSheet({ guildId, player, onEdit }: { guildId: string; play
         <section>
           <h3 className="text-muted-foreground mb-2 text-xs">Credits outside games</h3>
           <ul className="flex flex-col gap-1.5">
-            {Object.values(d.stats.money).map((m) => (
-              <li key={m.kind} className="flex justify-between text-xs">
+            {Object.entries(d.stats.money).map(([kind, m]) => (
+              <li key={kind} className="flex justify-between text-xs">
                 <span>
-                  {m.kind === "received" ? "Payments received" : moneyName(m.kind)}{" "}
+                  {kind === "received" ? "Payments received" : moneyName(kind)}{" "}
                   <span className="text-muted-foreground">({m.n}×)</span>
                 </span>
                 <span className="tabular">{signed(m.amount)}</span>
@@ -152,9 +178,9 @@ export function PlayerSheet({ guildId, player, onEdit }: { guildId: string; play
   )
 }
 
-function Stat({ label, value, tone }: { label: string; value: string; tone?: "good" | "bad" }) {
+function Stat({ label, value, tone, title }: { label: string; value: string; tone?: "good" | "bad"; title?: string }) {
   return (
-    <div className="bg-muted/40 rounded-md border px-2.5 py-2">
+    <div className="bg-muted/40 rounded-md border px-2.5 py-2" title={title}>
       <div className="text-muted-foreground text-[11px]">{label}</div>
       <div className={cn("tabular text-sm font-medium", tone === "good" && "text-success", tone === "bad" && "text-error")}>
         {value}

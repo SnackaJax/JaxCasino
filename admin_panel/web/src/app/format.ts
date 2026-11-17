@@ -51,7 +51,7 @@ export const GAME_NAMES: Record<string, string> = {
   raccoonheist: "Raccoon Heist",
   spinfrenzy: "Spin Frenzy",
 }
-export const gameName = (key: string) => GAME_NAMES[key] ?? key.charAt(0).toUpperCase() + key.slice(1)
+export const gameName = (key: string | null | undefined) => (key ? GAME_NAMES[key] ?? key.charAt(0).toUpperCase() + key.slice(1) : "Unknown")
 
 export const MONEY_NAMES: Record<string, string> = {
   claim: "Daily claim",
@@ -62,7 +62,7 @@ export const MONEY_NAMES: Record<string, string> = {
   giveall: "Give all",
   removeall: "Remove all",
 }
-export const moneyName = (key: string) => MONEY_NAMES[key] ?? key.charAt(0).toUpperCase() + key.slice(1)
+export const moneyName = (key: string | null | undefined) => (key ? MONEY_NAMES[key] ?? key.charAt(0).toUpperCase() + key.slice(1) : "Other")
 
 export const displayName = (p: { name: string | null }, id?: string | null) =>
   p.name ?? (id ? `Unknown (${id})` : "Unknown")

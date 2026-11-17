@@ -74,31 +74,31 @@ export function Shell({ session }: { session: Session }) {
     (k) => ({ key: k as PageKey, ...PAGES[k] })
   )
 
+  const navLink = ({ key, label, icon: Icon }: (typeof nav)[number]) => (
+    <Tooltip key={key}>
+      <TooltipTrigger asChild>
+        <a
+          href={`#/${key}`}
+          aria-label={label}
+          aria-current={page === key ? "page" : undefined}
+          className={cn(
+            "text-muted-foreground hover:bg-sidebar-accent hover:text-foreground grid size-10 place-items-center rounded-md transition-colors",
+            page === key && "bg-sidebar-accent text-foreground"
+          )}
+        >
+          <Icon className="size-5" weight={page === key ? "fill" : "regular"} />
+        </a>
+      </TooltipTrigger>
+      <TooltipContent side="right">{label}</TooltipContent>
+    </Tooltip>
+  )
+
   return (
     <div className="flex h-svh w-full overflow-hidden">
       <nav className="bg-sidebar border-sidebar-border flex w-14 shrink-0 flex-col items-center gap-1 border-r py-3">
         <GuildPicker guilds={guilds.data ?? []} current={guild} onPick={pickGuild} />
         <div className="bg-sidebar-border my-2 h-px w-8" />
-        {nav.map(({ key, label, icon: Icon }) => {
-          return (
-            <Tooltip key={key}>
-              <TooltipTrigger asChild>
-                <a
-                  href={`#/${key}`}
-                  aria-label={label}
-                  aria-current={page === key ? "page" : undefined}
-                  className={cn(
-                    "text-muted-foreground hover:bg-sidebar-accent hover:text-foreground grid size-10 place-items-center rounded-md transition-colors",
-                    page === key && "bg-sidebar-accent text-foreground"
-                  )}
-                >
-                  <Icon className="size-5" weight={page === key ? "fill" : "regular"} />
-                </a>
-              </TooltipTrigger>
-              <TooltipContent side="right">{label}</TooltipContent>
-            </Tooltip>
-          )
-        })}
+        {nav.map(navLink)}
         <div className="flex-1" />
         <Tooltip>
           <TooltipTrigger asChild>

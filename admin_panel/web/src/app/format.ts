@@ -94,3 +94,14 @@ export function resizable<T>(columns: T[], fixed: string[] = []): T[] {
     return fixed.includes(id) ? c : ({ ...c, enableResizing: true, minSize: 56, maxSize: 1200 } as T)
   })
 }
+
+/** 45s, 34m, 5h 12m, 3d 4h */
+export function duration(secs: number) {
+  const s = Math.max(0, Math.round(secs))
+  if (s < 60) return `${s}s`
+  const m = Math.floor(s / 60)
+  if (m < 60) return `${m}m`
+  const h = Math.floor(m / 60)
+  if (h < 24) return `${h}h ${String(m % 60).padStart(2, "0")}m`
+  return `${Math.floor(h / 24)}d ${h % 24}h`
+}

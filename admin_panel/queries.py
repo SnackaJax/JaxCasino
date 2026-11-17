@@ -32,8 +32,15 @@ async def player_exists(db: Database, guild_id: int, user_id: int) -> bool:
     return bool(await _one(db, "SELECT 1 AS x FROM users WHERE guild_id=? AND user_id=?", (guild_id, user_id)))
 
 
+# Time played, worked out from when a player's games happened: the time between two rounds counts, unless it's longer
+# than PLAY_BREAK (then it was a break); the first round after a break, or a lone round, counts as PLAY_ROUND.
+# Lottery tickets aren't playing. Covers the chat games and the Activity alike, back to the first game logged.
+PLAY_BREAK = 300
+PLAY_ROUND = 30
+
+
 async def players(db: Database, guild_id: int) -> list[dict]:
-    """Every player in the server with their balance, totals, last activity and credits bet per game."""
+    """Every player in the server with their balance, totals, time played, last activity and credits bet per game."""
     users = await _all(db, """SELECT user_id, balance, games_played, wins, losses, total_wagered, total_won,
                                      biggest_win, last_daily FROM users WHERE guild_id=?""", (guild_id,))
     games = await _all(db, """SELECT user_id, game, SUM(wagered) AS wagered, SUM(payout) - SUM(wagered) AS net,
@@ -43,6 +50,14 @@ async def players(db: Database, guild_id: int) -> list[dict]:
                              WHERE guild_id=? AND source IS NULL GROUP BY user_id""", (guild_id,))
     in_play = await _all(db, "SELECT user_id, SUM(amount) AS a FROM escrow WHERE guild_id=? GROUP BY user_id",
                          (guild_id,))
+    week_start = time.time() - 7 * 86400
+    step = f"CASE WHEN prev IS NULL OR ts - prev > {PLAY_BREAK} THEN {PLAY_ROUND} ELSE ts - prev END"
+    played = await _all(db, f"""SELECT user_id, SUM({step}) AS secs,
+                                       SUM(CASE WHEN ts >= ? THEN {step} ELSE 0 END) AS week
+                                FROM (SELECT user_id, ts, LAG(ts) OVER (PARTITION BY user_id ORDER BY ts) AS prev
+                                      FROM game_log WHERE guild_id=? AND wagered>0 AND game != 'lottery')
+                                GROUP BY user_id""", (week_start, guild_id))
+    play_time = {r["user_id"]: (r["secs"] or 0, r["week"] or 0) for r in played}
     mix: dict[int, dict] = {}
     net: dict[int, int] = {}
     last: dict[int, float] = {r["user_id"]: r["last"] for r in seen}
@@ -61,6 +76,7 @@ async def players(db: Database, guild_id: int) -> list[dict]:
             "games": u["games_played"], "wins": u["wins"], "losses": u["losses"],
             "wagered": u["total_wagered"], "won": u["total_won"], "biggest_win": u["biggest_win"],
             "net": net.get(uid, 0), "last_active": last.get(uid) or (u["last_daily"] or None),
+            "played": round(play_time.get(uid, (0, 0))[0]), "played_week": round(play_time.get(uid, (0, 0))[1]),
             "mix": mix.get(uid, {}),
         })
     return out

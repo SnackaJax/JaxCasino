@@ -4,7 +4,7 @@ import { PencilSimpleIcon } from "@phosphor-icons/react"
 
 import { api, type Player, type PlayerDetail } from "@/app/api"
 import { BalanceChart } from "@/app/balance-chart"
-import { ago, compact, credits, gameColor, gameName, moneyName, pct, signed } from "@/app/format"
+import { ago, compact, credits, duration, gameColor, gameName, moneyName, pct, signed } from "@/app/format"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -75,6 +75,13 @@ function PlayerSheetBody({ guildId, player, onEdit }: { guildId: string; player:
         <Stat label="Paid back" value={compact(player.won)} />
         <Stat label="Net" value={signed(player.net)} tone={player.net > 0 ? "good" : player.net < 0 ? "bad" : undefined} />
         <Stat label="Best win" value={compact(player.biggest_win)} />
+        <Stat
+          label="Time played"
+          value={duration(player.played)}
+          title={`${duration(player.played_week)} in the last 7 days. Counted from when their games happened; breaks of more than 5 minutes don't count.`}
+        />
+        <Stat label="This week" value={duration(player.played_week)} />
+        <Stat label="Avg bet" value={player.games ? compact(player.wagered / player.games) : "—"} />
       </section>
 
       {d?.stats.per_game.length ? (

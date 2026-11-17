@@ -5,7 +5,7 @@ import type { ColumnDef } from "@tanstack/react-table"
 
 import { api, type Guild, type Player } from "@/app/api"
 import { EditBalanceDialog, type EditTarget } from "@/app/edit-balance"
-import { ago, compact, credits, displayName, gameColor, gameName, pct, resizable, signed } from "@/app/format"
+import { ago, compact, credits, displayName, duration, gameColor, gameName, pct, resizable, signed } from "@/app/format"
 import { PlayerAvatar } from "@/app/player-avatar"
 import { PlayerSheet } from "@/app/player-sheet"
 import { DataTableFilterCommand } from "@/components/data-table/data-table-filter-command"
@@ -60,6 +60,7 @@ type PlayerRow = {
   wagered: number
   net: number
   biggest_win: number
+  played: number
   last_active: Date
   avatar: string | null
   mix: Record<string, number>
@@ -176,6 +177,25 @@ const tableSchema = createTableSchema({
     .sortable()
     .hidden()
     .size(90),
+  played: col
+    .number()
+    .label("Played")
+    .description("time played")
+    .display("custom", {
+      cell: (v: unknown, row: unknown) => {
+        const p = (row as PlayerRow).player
+        return (v as number) ? (
+          <span className="tabular" title={`${duration(p.played)} in all · ${duration(p.played_week)} in the last 7 days`}>
+            {duration(v as number)}
+          </span>
+        ) : (
+          <Dash />
+        )
+      },
+    })
+    .filterable("slider", { min: 0, max: 1000 })
+    .sortable()
+    .size(100),
   last_active: col
     .timestamp()
     .label("Last active")
@@ -210,6 +230,7 @@ function toRows(players: Player[]): PlayerRow[] {
     games: p.games,
     winrate: p.games ? (p.wins / p.games) * 100 : 0,
     wagered: p.wagered,
+    played: p.played,
     net: p.net,
     biggest_win: p.biggest_win,
     last_active: new Date((p.last_active ?? 0) * 1000),

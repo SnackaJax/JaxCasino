@@ -70,6 +70,9 @@ export type Player = Person & {
   biggest_win: number
   net: number
   last_active: number | null
+  /** time played in seconds, worked out from when their games happened (all time / the last 7 days) */
+  played: number
+  played_week: number
   mix: Record<string, number>
 }
 

@@ -55,6 +55,8 @@ from utils.economy import Wager
 log = logging.getLogger("jaxcasino.activity.blackjack")
 
 GAME = "blackjack"            # same game name as the chat version, so /stats and /serverstats add them up
+LOG_KEEP = 100   # table log lines kept
+LOG_SENT = 60    # ...and sent to the page, which scrolls through them
 DECKS = 6
 RESHUFFLE_AT = 0.25           # a fresh shoe once fewer than this share of its cards are left
 BET_TIME = 15                 # seconds of betting after the first bet of a round
@@ -238,7 +240,7 @@ class Table:
 
     def note(self, text: str) -> None:
         self.log.append(text)
-        self.log = self.log[-30:]
+        self.log = self.log[-LOG_KEEP:]
 
     def draw(self) -> Card:
         if not self.shoe:
@@ -313,7 +315,7 @@ class Table:
                "min_bet": self.min_bet, "max_bet": self.max_bet, "max": self.max_players, "phase": self.phase,
                "round": self.round_no, "seats": seats, "dealer": dealer,
                "turn": {"seat": self.turn[0], "hand": self.turn[1]} if self.turn and self.phase == "playing" else None,
-               "deadline": int(self.deadline * 1000), "you": mine[0] if mine else -1, "mine": mine, "log": self.log[-14:], "result": self.result,
+               "deadline": int(self.deadline * 1000), "you": mine[0] if mine else -1, "mine": mine, "log": self.log[-LOG_SENT:], "result": self.result,
                "event": self.event, "seq": self.seq, "bet_time": BET_TIME, "turn_time": TURN_TIME,
                "shoe": len(self.shoe), "shoe_size": DECKS * 52}
         me = self.seats[self.turn[0]] if self.turn and self.phase == "playing" else None

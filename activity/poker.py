@@ -37,6 +37,8 @@ from utils.rng import rng
 log = logging.getLogger("jaxcasino.activity.poker")
 
 GAME = "poker"
+LOG_KEEP = 100   # table log lines kept
+LOG_SENT = 60    # ...and sent to the page, which scrolls through them
 TURN_TIME = 30            # seconds a player has to act
 NEXT_HAND_DELAY = 9       # seconds between hands (the showdown and the pot sliding to the winner play meanwhile)
 MAX_TIMEOUTS = 2          # consecutive timeouts before a player is removed
@@ -161,7 +163,7 @@ class Table:
 
     def note(self, text: str) -> None:
         self.log.append(text)
-        self.log = self.log[-30:]
+        self.log = self.log[-LOG_KEEP:]
 
     def index_of(self, seat: Seat) -> int:
         return self.seats.index(seat)
@@ -197,7 +199,7 @@ class Table:
                "hand_no": self.hand_no, "board": [card(c) for c in self.board] if playing else [],
                "pot": self.pot if playing else 0, "current_bet": self.current_bet, "dealer": self.dealer,
                "turn": self.turn if self.phase == "playing" else -1, "deadline": int(self.deadline * 1000),
-               "seats": seats, "you": you, "log": self.log[-12:], "result": self.result if self.phase == "between"
+               "seats": seats, "you": you, "log": self.log[-LOG_SENT:], "result": self.result if self.phase == "between"
                else "", "event": self.event, "seq": self.seq, "turn_time": TURN_TIME, "rake": config.POKER_RAKE}
         if me and self.phase == "playing" and me.in_hand and not me.folded and me.hole and len(self.board) >= 3:
             out["my_hand"] = hand_name(best_hand(me.hole + self.board)[0])

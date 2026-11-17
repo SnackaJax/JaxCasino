@@ -827,6 +827,19 @@ function renderStatic(st, opts = {}) {
   renderControls(st);
 }
 
+
+// The table log, newest line on top. Re-drawn only when it changes; someone scrolled down to older lines stays on
+// the same lines when a new one comes in at the top.
+function renderLog(lines) {
+  const el = $('log');
+  const html = [...lines].reverse().map((l) => `<div>${esc(l)}</div>`).join('');
+  if (el.dataset.html === html) return;
+  const fromTop = el.scrollTop, before = el.scrollHeight;
+  el.innerHTML = html;
+  el.dataset.html = html;
+  if (fromTop > 2) el.scrollTop = fromTop + (el.scrollHeight - before);
+}
+
 function renderSide(st) {
   $('crumb').textContent = `${st.name} · bets ${fmt(st.min_bet)}–${fmt(st.max_bet)}`;
   const me = st.you >= 0 ? st.seats[st.you] : null;
@@ -834,7 +847,7 @@ function renderSide(st) {
   $('tableInfo').innerHTML = `<b>${esc(st.name)}</b><br>Bets ${fmt(st.min_bet)} – ${fmt(st.max_bet)}<br>
     ${seated}/${st.max} seats · ${st.round ? `round #${st.round}` : 'no rounds yet'}
     ${me ? '' : '<br>You are watching'}`;
-  $('log').innerHTML = [...st.log].reverse().map((l) => `<div>${esc(l)}</div>`).join('');
+  renderLog(st.log);
 }
 
 // ------------------------------------------------------------------ controls

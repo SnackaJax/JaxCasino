@@ -390,8 +390,13 @@ body.discord-mobile #app { padding-top: max(env(safe-area-inset-top), var(--disc
 .wait-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: center; }
 .wait-text { color: var(--muted); font-size: 14px; text-align: center; }
 /* Hit / Stand picked before your turn: dimmed until picked, then lit with a check */
-.pre-row { display: flex; align-items: center; gap: 8px; }
+.pre-row { display: flex; align-items: center; justify-content: center; gap: 8px 14px; flex-wrap: wrap; }
+.pre-group { display: flex; align-items: center; gap: 6px; }
+.pre-group + .pre-group { padding-left: 14px; border-left: 1px solid var(--line); }
 .pre-label { color: var(--muted); font-size: 13px; font-weight: 700; white-space: nowrap; }
+/* a hand with an action picked ahead shows it beside its total on the table */
+.total.pre-hit::after { content: ' · Hit'; color: #8fe0a8; }
+.total.pre-stand::after { content: ' · Stand'; color: #ff9e9e; }
 .pre-label b { color: var(--gold2); }
 .pre-row .btn { min-width: 72px; padding: 6px 10px; opacity: .55; }
 .pre-row .btn.on { opacity: 1; box-shadow: 0 0 0 2px var(--gold2); }
@@ -437,7 +442,10 @@ body.discord-mobile #app { padding-top: max(env(safe-area-inset-top), var(--disc
   .bet-btns { width: 100%; }
   .bet-btns .btn, .act-row .btn { flex: 1; min-width: 0; padding: 8px 4px; }
   .my-total { width: 100%; min-width: 0; }
-  .pre-row .btn { min-width: 0; flex: 1; }
+  .pre-row { width: 100%; gap: 6px 10px; }
+  .pre-group { flex: 1; }
+  .pre-group + .pre-group { padding-left: 10px; }
+  .pre-row .btn { min-width: 0; flex: 1; padding: 6px 4px; }
 }
 /* narrow phones: the header has five buttons and the balance, so the logo is just the spade */
 @media (max-width: 420px) {

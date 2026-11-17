@@ -296,8 +296,8 @@ function setupInfo() {
       get exactly one more card) or <b>Split</b> two cards of the same value into two hands (up to ${W.max_hands}
       hands; split aces get one card each). You have ${W.turn_time} seconds; if time runs out you stand, and after two
       timeouts in a row you're taken off the table.</li>
-      <li>While others are playing you can already pick <b>Hit</b> or <b>Stand</b> for your next hand: it's taken as
-      soon as that hand's turn comes. Tap it again to take it back. After a hit you choose again.</li>
+      <li>While others are playing you can already pick <b>Hit</b> or <b>Stand</b> for each of your hands still to
+      play (on every seat you have): it's taken as soon as that hand's turn comes. Tap it again to take it back. After a hit you choose again.</li>
       <li>${W.decks}-deck shoe. The dealer stands on all 17s. A win pays 1:1, blackjack pays 3:2, a tie is a push (your
       bet comes back). When the dealer has blackjack, the round ends straight away.</li>
       <li>Anyone in the server can watch a table. A seat with no bet for a few rounds in a row is given up.</li>
@@ -613,7 +613,8 @@ function renderBadges(st, opts = {}) {
       const topY = g.baseY - (m - 1) * rise - g.cwS * 0.7 - 10;
       const bj = h.result === 'blackjack';
       want.set(`t:${si}:${j}`, { x: g.hx, y: topY, text: bj ? 'BJ' : h.soft ? `${h.total - 10}/${h.total}` : String(h.total),
-        cls: bj ? 'bj' : h.total > 21 ? 'bust' : h.total === 21 ? 'n21' : '' });
+        cls: (bj ? 'bj' : h.total > 21 ? 'bust' : h.total === 21 ? 'n21' : '')
+          + (h.pre && st.phase === 'playing' && !h.done ? ` pre-${h.pre}` : '') });
       const showRes = h.result && (st.phase === 'settle' || h.result === 'bust' || h.result === 'blackjack') && !opts.noStamps;
       if (showRes) {
         const label = { blackjack: 'BLACKJACK', win: h.payout ? `WIN` : 'WIN', push: 'PUSH', lose: 'LOSE', bust: 'BUST' }[h.result];
@@ -923,44 +924,59 @@ function renderControls(st) {
     renderPre(st);
   }
 }
-// Hit or Stand picked before your turn: it goes on your next hand still to play (seats play from the dealer's left,
-// a seat's hands in order), and the server takes it as soon as that hand's turn comes. Only shown once the turns have
-// started, so the totals don't give the cards away before they're dealt on screen.
-let preNext = null;   // {seat, hand} the buttons are for
-function nextHand(st) {
-  if (st.phase !== 'playing' || !st.turn) return null;
-  for (const i of [...(st.mine || [])].sort((a, b) => a - b)) {
+// Hit or Stand picked before your turn, for every one of your hands still to play (on all your seats, split hands
+// too); the server takes each one as soon as that hand's turn comes. The buttons are in the same order as the hands on
+// the table, left to right, and a hand with a pick shows it beside its total. Only shown once the turns have started,
+// so the totals don't give the cards away before they're dealt on screen.
+function handsAhead(st) {
+  if (st.phase !== 'playing' || !st.turn) return [];
+  const out = [];
+  for (const i of st.mine || []) {
     const s = st.seats[i];
     if (!s || s.leaving) continue;
-    for (let j = 0; j < s.hands.length; j++) {
-      const h = s.hands[j];
-      if (h.done || (st.turn.seat === i && st.turn.hand === j)) continue;
-      return { seat: i, hand: j, h, multi: st.mine.length > 1 || s.hands.length > 1 };
-    }
+    const geo = handGeom(i, s.hands.length);
+    s.hands.forEach((h, j) => {
+      if (!h.done && !(st.turn.seat === i && st.turn.hand === j)) out.push({ seat: i, hand: j, h, x: geo[j].hx });
+    });
   }
-  return null;
+  return out.sort((a, b) => a.x - b.x);
 }
+let preHands = [];   // the hands the buttons are for, in the order of the groups
+// the same hands in the order they'll be played (seats from the dealer's left, a seat's hands in order)
+const handsAheadInPlayOrder = () => [...preHands].sort((a, b) => a.seat - b.seat || a.hand - b.hand);
 function renderPre(st) {
-  const n = nextHand(st);
-  preNext = n;
-  $('preRow').classList.toggle('hidden', !n);
-  if (!n) return;
-  const total = n.h.soft ? `${n.h.total - 10}/${n.h.total}` : n.h.total;
-  $('preLabel').innerHTML = `${n.multi ? 'Next hand' : 'Your hand'} <b>${esc(String(total))}</b> · then:`;
-  for (const [id, a] of [['preHit', 'hit'], ['preStand', 'stand']]) {
-    const on = n.h.pre === a;
-    $(id).classList.toggle('on', on);
-    $(id).setAttribute('aria-pressed', String(on));
+  preHands = handsAhead(st);
+  const row = $('preRow');
+  row.classList.toggle('hidden', !preHands.length);
+  if (!preHands.length) return;
+  const one = preHands.length === 1 && (st.mine || []).length === 1 && st.seats[preHands[0].seat].hands.length === 1;
+  // the groups are only rebuilt when the hands change, so a button doesn't lose its focus on every update
+  const key = preHands.map((p) => `${p.seat}:${p.hand}`).join(',') + (one ? '|1' : '');
+  if (row._key !== key) {
+    row._key = key;
+    row.innerHTML = preHands.map((p, n) => `<div class="pre-group">
+      <span class="pre-label"></span>
+      <button class="btn btn-hit" data-n="${n}" data-a="hit" aria-pressed="false">Hit</button>
+      <button class="btn btn-stand" data-n="${n}" data-a="stand" aria-pressed="false">Stand</button></div>`).join('');
   }
+  row.querySelectorAll('.pre-group').forEach((g, n) => {
+    const { h } = preHands[n];
+    const total = esc(String(h.soft ? `${h.total - 10}/${h.total}` : h.total));
+    g.querySelector('.pre-label').innerHTML = one ? `Your hand <b>${total}</b> · then:` : `<b>${total}</b>`;
+    for (const b of g.querySelectorAll('button')) {
+      const on = h.pre === b.dataset.a;
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-pressed', String(on));
+    }
+  });
 }
-function preselect(action) {
-  if (!preNext) return;
+$('preRow').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-a]');
+  const p = b && preHands[Number(b.dataset.n)];
+  if (!p) return;
   unlock(); sfx.click();
-  const { seat, hand, h } = preNext;
-  send({ type: 'pre', seat, hand, action: h.pre === action ? '' : action });
-}
-$('preHit').addEventListener('click', () => preselect('hit'));
-$('preStand').addEventListener('click', () => preselect('stand'));
+  send({ type: 'pre', seat: p.seat, hand: p.hand, action: p.h.pre === b.dataset.a ? '' : b.dataset.a });
+});
 function act(action) {
   unlock();
   for (const id of ['hitBtn', 'standBtn', 'doubleBtn', 'splitBtn']) $(id).disabled = true;
@@ -984,9 +1000,10 @@ document.addEventListener('keydown', (e) => {
   if (e.repeat || !T || $('tableView').classList.contains('hidden')) return;
   const k = e.key.toLowerCase();
   const map = { h: 'hitBtn', s: 'standBtn', d: 'doubleBtn', p: 'splitBtn', ' ': 'dealBtn' };
-  const before = { h: 'preHit', s: 'preStand' };   // before your turn, H and S pick the next action
-  for (const id of [map[k], before[k]]) {
-    const b = id && $(id);
+  // before your turn, H and S pick the action for your next hand to play
+  const before = { h: 'hit', s: 'stand' }[k] && preHands.length
+    ? $('preRow').querySelector(`button[data-n="${preHands.indexOf(handsAheadInPlayOrder()[0])}"][data-a="${{ h: 'hit', s: 'stand' }[k]}"]`) : null;
+  for (const b of [map[k] && $(map[k]), before]) {
     if (b && !b.disabled && !b.closest('.hidden, .off')) { e.preventDefault(); b.click(); return; }
   }
 });

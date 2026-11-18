@@ -1275,12 +1275,22 @@ async function animSide(prev, st, ev) {
   const results = ev.results || [];
   const wins = results.filter((r) => r.win);
   const speech = [];
+  const byPlayer = new Map();   // player id -> { name, net }: one player on several seats counts once
   for (const r of wins) {
     const s = st.seats[r.seat];
     if (!s) continue;
     speech.push(`${r.name}! ${speakName(s.name)} wins ${speakAmount(r.payout - r.stake)} on ${r.bet === 'pp' ? 'Perfect Pairs' : 'twenty-one plus three'}.`);
+    const p = byPlayer.get(s.id) || { name: s.name, net: 0 };
+    p.net += r.payout - r.stake;
+    byPlayer.set(s.id, p);
   }
-  if (speech.length) say(speech.join(' '));
+  // three or more side bets won: reading each one out runs long, so the dealer sums it up instead
+  if (speech.length >= SUMMARY_WINNERS) {
+    const ps = [...byPlayer.values()];
+    const total = speakAmount(ps.reduce((a, p) => a + p.net, 0));
+    say(ps.length === 1 ? `${speakName(ps[0].name)} wins ${total} on the side bets.`
+      : `${countPlayers(ps.length)} win ${total} on the side bets.`);
+  } else if (speech.length) say(speech.join(' '));
   // the tags over the side circles: what it was, and what it paid
   for (const r of results) {
     if (!spotEls[r.seat]) continue;
@@ -1437,8 +1447,10 @@ async function animDealerCard(prev, st, ev) {
 }
 // what the dealer says when the round is paid: the dealer's total, then the winners and what each of them won
 // (everything they got back this round minus everything they bet, side bets included)
+// From this many winners on (or side bets won, in animSide) the dealer sums them up instead of naming each one
 const SUMMARY_WINNERS = 3;
 const COUNT_WORDS = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve'];
+const countPlayers = (n) => `${COUNT_WORDS[n] || n} players`;
 function settleSpeech(st) {
   const d = st.dealer;
   let text = d.blackjack || d.total > 21 ? '' : `Dealer has ${d.total}. `;
@@ -1463,8 +1475,7 @@ function settleSpeech(st) {
   // three or more winners: naming each one runs long, so the dealer sums it up instead
   if (winners.length >= SUMMARY_WINNERS) {
     const total = winners.reduce((a, [s]) => a + s.won - s.staked, 0);
-    const count = COUNT_WORDS[winners.length] || String(winners.length);
-    return `${text}Congratulations! ${count} players win ${speakAmount(total)} between them.`;
+    return `${text}Congratulations! ${countPlayers(winners.length)} win ${speakAmount(total)} between them.`;
   }
   const lines = winners.map(([s]) => `${speakName(s.name)} wins ${speakAmount(s.won - s.staked)}`);
   if (winners.length === 1) return `${text}Congratulations, ${who(winners[0])}! ${lines[0]}.`;

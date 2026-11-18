@@ -5,12 +5,14 @@ here can't collide with a bet. The page itself is a React app built into admin_p
 admin_panel/web, see the README there).
 
 Security: it listens on ADMIN_PANEL_HOST (127.0.0.1 by default) and every API call needs a signed session cookie,
-which you get by entering ADMIN_PANEL_PASSWORD. The cookie is SameSite=Strict and HttpOnly, and changes must be JSON
+which you get by entering ADMIN_PANEL_PASSWORD or by signing in with Discord as the bot's owner (or someone in
+ADMIN_PANEL_USERS). The cookie is SameSite=Strict and HttpOnly, and changes must be JSON
 from the panel's own origin, so another website open in your browser can't make changes through it.
 
 Routes
   GET  /api/session                  whether you're signed in
   POST /api/login, /api/logout       {password}
+  GET  /api/auth/discord/start       sends you to Discord to sign in; Discord sends you back to /api/auth/discord
   GET  /api/guilds                   servers with players
   GET  /api/overview?guild=&period=  stats for the dashboard (period: 24h, 7d, 30d, all)
   GET  /api/insights?guild=&period=  the overview's extra charts: house result, players, going broke, heatmap,
@@ -33,11 +35,14 @@ import hashlib
 import hmac
 import json
 import logging
+import secrets
 import time
+from urllib.parse import urlencode
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Protocol
 
+import aiohttp
 from aiohttp import web
 
 from admin_panel import insights, queries
@@ -49,6 +54,9 @@ log = logging.getLogger("jaxcasino.adminpanel")
 HERE = Path(__file__).parent
 STATIC = HERE / "static"
 COOKIE = "jaxcasino_admin"
+STATE_COOKIE = "jaxcasino_admin_state"   # ties Discord's answer to the sign-in this browser started
+DISCORD = "https://discord.com"
+DISCORD_CALLBACK = "/api/auth/discord"
 SESSION_DAYS = 30
 MAX_AMOUNT = 10**15
 MAX_NOTE = 200
@@ -61,6 +69,8 @@ class Directory(Protocol):
     def guilds(self) -> dict[int, dict]: ...                           # id -> {name, icon}
     def member(self, guild_id: int, user_id: int) -> dict | None: ...  # {name, avatar, in_server}
     async def crux_started(self, guild_id: int, user_id: int, until: float) -> None: ...  # closes their games
+    def client_id(self) -> int | None: ...                             # the bot's application id (Discord sign-in)
+    async def owner_ids(self) -> set[int]: ...                         # the bot's owner and team (Discord sign-in)
 
 
 
@@ -70,6 +80,8 @@ class AdminPanel:
     db: Database
     password: str
     directory: Directory
+    discord_secret: str = ""                                  # DISCORD_CLIENT_SECRET: Discord sign-in needs it
+    discord_users: frozenset[int] = frozenset()               # ADMIN_PANEL_USERS: let in besides the owner
     runner: web.AppRunner | None = None
     _fails: list[float] = field(default_factory=list)
 
@@ -120,7 +132,8 @@ class AdminPanel:
                 origin = request.headers.get("Origin")
                 if origin and origin.split("://", 1)[-1] != request.host:
                     return web.json_response({"error": "wrong origin"}, status=403)
-            if path not in ("/api/session", "/api/login") and not self.valid_session(request.cookies.get(COOKIE)):
+            open_paths = ("/api/session", "/api/login", "/api/auth/discord/start", DISCORD_CALLBACK)
+            if path not in open_paths and not self.valid_session(request.cookies.get(COOKIE)):
                 return web.json_response({"error": "not signed in"}, status=401)
             try:
                 resp = await handler(request)
@@ -145,7 +158,7 @@ class AdminPanel:
     # ------------------------------------------------------------ auth routes
     async def session(self, request: web.Request) -> web.Response:
         ok = self.valid_session(request.cookies.get(COOKIE))
-        out = {"authenticated": ok}
+        out = {"authenticated": ok, "discord": self.discord_ready()}
         return web.json_response(out)
 
     async def login(self, request: web.Request) -> web.Response:
@@ -168,6 +181,82 @@ class AdminPanel:
                         samesite="Strict", path="/")
         log.info("Admin panel: signed in from %s", request.remote)
         return resp
+
+    # ------------------------------------------------------------ Discord sign-in
+    def discord_ready(self) -> bool:
+        client_id = getattr(self.directory, "client_id", None)   # test servers may not have one
+        return bool(self.discord_secret and client_id and client_id())
+
+    @staticmethod
+    def callback_url(request: web.Request) -> str:
+        """Where Discord sends you back: this panel, at the address you opened it on. Discord only accepts it when
+        it's listed under OAuth2 -> Redirects in the Developer Portal."""
+        return f"{request.scheme}://{request.host}{DISCORD_CALLBACK}"
+
+    def signed_in(self, location: str = "/") -> web.Response:
+        resp = web.HTTPFound(location)
+        resp.set_cookie(COOKIE, self.new_session(), max_age=SESSION_DAYS * 86400, httponly=True,
+                        samesite="Strict", path="/")
+        resp.del_cookie(STATE_COOKIE, path=DISCORD_CALLBACK)
+        return resp
+
+    @staticmethod
+    def sign_in_failed(reason: str) -> web.Response:
+        resp = web.HTTPFound(f"/?signin={reason}")
+        resp.del_cookie(STATE_COOKIE, path=DISCORD_CALLBACK)
+        return resp
+
+    async def discord_start(self, request: web.Request) -> web.Response:
+        if not self.discord_ready():
+            return self.sign_in_failed("unavailable")
+        state = secrets.token_urlsafe(24)
+        query = urlencode({"client_id": str(self.directory.client_id()), "response_type": "code", "scope": "identify",
+                           "redirect_uri": self.callback_url(request), "state": state, "prompt": "none"})
+        resp = web.HTTPFound(f"{DISCORD}/oauth2/authorize?{query}")
+        # Lax, not Strict: the browser has to send it along when Discord sends you back here
+        resp.set_cookie(STATE_COOKIE, state, max_age=600, httponly=True, samesite="Lax", path=DISCORD_CALLBACK)
+        return resp
+
+    async def discord_callback(self, request: web.Request) -> web.Response:
+        q = request.query
+        if q.get("error"):
+            return self.sign_in_failed("cancelled")
+        state, expected = q.get("state", ""), request.cookies.get(STATE_COOKIE, "")
+        if not state or not expected or not hmac.compare_digest(state, expected):
+            return self.sign_in_failed("expired")
+        if not self.discord_ready() or not q.get("code"):
+            return self.sign_in_failed("failed")
+        form = {"client_id": str(self.directory.client_id()), "client_secret": self.discord_secret,
+                "grant_type": "authorization_code", "code": q["code"], "redirect_uri": self.callback_url(request)}
+        try:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15)) as http:
+                async with http.post(f"{DISCORD}/api/v10/oauth2/token", data=form) as r:
+                    token = await r.json(content_type=None)
+                    if r.status != 200 or not isinstance(token, dict) or "access_token" not in token:
+                        log.warning("Admin panel: Discord sign-in, code exchange failed (%s): %s", r.status, token)
+                        return self.sign_in_failed("failed")
+                headers = {"Authorization": f"Bearer {token['access_token']}"}
+                async with http.get(f"{DISCORD}/api/v10/users/@me", headers=headers) as r:
+                    user = await r.json(content_type=None)
+                    if r.status != 200 or not isinstance(user, dict):
+                        return self.sign_in_failed("failed")
+            uid = int(user["id"])
+        except (aiohttp.ClientError, TimeoutError, ValueError, KeyError, TypeError) as e:
+            log.warning("Admin panel: Discord sign-in, no usable answer from Discord: %r", e)
+            return self.sign_in_failed("failed")
+        name = user.get("global_name") or user.get("username") or uid
+        allowed = uid in self.discord_users
+        if not allowed:
+            try:
+                allowed = uid in await self.directory.owner_ids()
+            except Exception:
+                log.exception("Admin panel: couldn't look up the bot's owner")
+        if not allowed:
+            log.warning("Admin panel: %s (%s) tried to sign in with Discord from %s, not allowed", name, uid,
+                        request.remote)
+            return self.sign_in_failed("denied")
+        log.info("Admin panel: %s (%s) signed in with Discord from %s", name, uid, request.remote)
+        return self.signed_in()
 
     async def logout(self, request: web.Request) -> web.Response:
         resp = web.json_response({"authenticated": False})
@@ -400,6 +489,8 @@ class AdminPanel:
         r.add_get("/api/session", self.session)
         r.add_post("/api/login", self.login)
         r.add_post("/api/logout", self.logout)
+        r.add_get("/api/auth/discord/start", self.discord_start)
+        r.add_get(DISCORD_CALLBACK, self.discord_callback)
         r.add_get("/api/guilds", self.guilds)
         r.add_get("/api/overview", self.overview)
         r.add_get("/api/players", self.players)

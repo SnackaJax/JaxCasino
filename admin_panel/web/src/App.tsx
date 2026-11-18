@@ -34,6 +34,6 @@ export default function App() {
       </div>
     )
   }
-  if (!session.data?.authenticated) return <Login />
+  if (!session.data?.authenticated) return <Login discord={!!session.data?.discord} />
   return <Shell session={session.data} />
 }

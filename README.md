@@ -120,6 +120,8 @@ A website for you, the bot's owner, served by the bot on your own machine: stats
 
 It only listens on this machine (`127.0.0.1`; in Docker the port is published on `127.0.0.1` only). To use it from your phone or another computer at home, run it in Docker with `ADMIN_PANEL_BIND=0.0.0.0` in `.env` and run `docker compose up -d`; it's then at `http://<this machine's LAN address>:8780`. Everyone on that network can reach the sign-in page, so pick a strong password and only do this on a network you trust. Don't point a tunnel or reverse proxy at it. Change the password in `.env` and restart to sign everyone out.
 
+**Sign in with Discord:** when `DISCORD_CLIENT_SECRET` is set (the Activity needs it too), the sign-in page also has a "Sign in with Discord" button. It lets in the bot's owner in the Developer Portal (or every member of its team), plus anyone whose Discord user ID is in `ADMIN_PANEL_USERS` (separated by commas). The password keeps working next to it. In the Developer Portal, add each address you open the panel on under OAuth2 → Redirects, ending in `/api/auth/discord`: for example `http://127.0.0.1:8780/api/auth/discord`, and `http://<LAN address>:8780/api/auth/discord` if you use it from your network.
+
 
 **Working on the panel:** `python -m admin_panel.devserver --seed --live` runs it without Discord at <http://127.0.0.1:8781> (password `dev`) on a test database (`admin_dev.db`) with made-up players, and keeps playing made-up games for the Live view. For hot reload while editing the page, also run `npm run dev` in `admin_panel/web` and open <http://localhost:5180>. The page is React with [shadcn/ui](https://ui.shadcn.com) and the [OpenStatus data-table-filters](https://data-table.openstatus.dev) blocks (MIT), dark mode only.
 

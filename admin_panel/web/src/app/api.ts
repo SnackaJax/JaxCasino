@@ -41,6 +41,8 @@ export const api = {
 
 export type Session = {
   authenticated: boolean
+  /** whether "Sign in with Discord" works (the bot knows its client secret) */
+  discord?: boolean
 }
 
 export type Guild = {

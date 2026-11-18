@@ -123,6 +123,9 @@ ADMIN_PANEL_ENABLED = os.getenv("ADMIN_PANEL_ENABLED", "0").strip().lower() in (
 ADMIN_PANEL_HOST = os.getenv("ADMIN_PANEL_HOST", "127.0.0.1").strip() or "127.0.0.1"
 ADMIN_PANEL_PORT = _int("ADMIN_PANEL_PORT", 8780)
 ADMIN_PANEL_PASSWORD = os.getenv("ADMIN_PANEL_PASSWORD", "").strip()
+# Besides the password, the bot's owner (and the members of its Developer Portal team) can sign in with Discord.
+# ADMIN_PANEL_USERS lets more people in that way: Discord user IDs, separated by commas.
+ADMIN_PANEL_USERS = _int_list("ADMIN_PANEL_USERS")
 
 CURRENCY = "credits"
 COIN = "🪙"

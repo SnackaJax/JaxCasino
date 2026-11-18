@@ -14,6 +14,20 @@ class BotDirectory:
 
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        self._owners: set[int] | None = None
+
+    def client_id(self) -> int | None:
+        return self.bot.application_id
+
+    async def owner_ids(self) -> set[int]:
+        """The bot's owner in the Developer Portal, or every member of its team (asked once, then remembered)."""
+        if self._owners is None:
+            info = await self.bot.application_info()
+            owners = {info.owner.id} if info.owner else set()
+            if info.team:
+                owners |= {m.id for m in info.team.members}
+            self._owners = owners
+        return self._owners
 
     def guilds(self) -> dict[int, dict]:
         return {g.id: {"name": g.name, "icon": g.icon.with_size(64).url if g.icon else None}
@@ -49,7 +63,9 @@ class AdminPanelCog(commands.Cog):
             log.warning("The admin panel is on (ADMIN_PANEL_ENABLED=1) but ADMIN_PANEL_PASSWORD is empty, so it "
                         "wasn't started. Set a password in .env.")
             return
-        self.panel = AdminPanel(self.bot.db, config.ADMIN_PANEL_PASSWORD, BotDirectory(self.bot))
+        self.panel = AdminPanel(self.bot.db, config.ADMIN_PANEL_PASSWORD, BotDirectory(self.bot),
+                                discord_secret=config.DISCORD_CLIENT_SECRET,
+                                discord_users=frozenset(config.ADMIN_PANEL_USERS))
         try:
             await self.panel.start(config.ADMIN_PANEL_HOST, config.ADMIN_PANEL_PORT)
         except OSError as e:

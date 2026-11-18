@@ -1,7 +1,6 @@
 """/crux: a player's own break from the bot and the casino Activity. The pieces several places share: reading a
 duration, and the message someone with a crux gets."""
 import re
-import time
 
 import discord
 
@@ -38,11 +37,11 @@ def describe(seconds: float) -> str:
 
 def crux_embed(until: float) -> discord.Embed:
     """What someone with a crux sees when they try to play."""
-    left = until - time.time()
+    # Discord shows <t:...:R> as "in 9 minutes" and keeps it up to date, so no time left of our own next to it
     return discord.Embed(
         title="🧊 You have a crux",
         description=(f"You're taking a break from the casino. It ends <t:{int(until)}:F> "
-                     f"(<t:{int(until)}:R>), in about **{describe(left)}**.\n\n"
+                     f"(**<t:{int(until)}:R>**).\n\n"
                      "Until then the games, the Activity and the other commands are off for you. "
                      "Only a server admin can end it early."),
         color=discord.Color.blue(),

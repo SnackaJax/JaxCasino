@@ -122,6 +122,8 @@ def build_embed(period: str, st: dict) -> discord.Embed:
                      f"({signed(best['wagered'] - best['paid'])} credits)")
         ret = worst["paid"] / worst["wagered"] * 100
         lines.append(f"🎁 **Best game for players:** {game_name(worst['game'])} (paid back {ret:.0f}% of bets)")
+    if (k := st.get("top_streak")) and k["best"] >= 2:
+        lines.append(f"🔥 **Longest winstreak:** <@{k['user_id']}> won {k['best']} in a row at {game_name(k['game'])}")
     if lines:
         embed.add_field(name="Highlights", value="\n".join(lines)[:1024], inline=False)
 
@@ -203,6 +205,7 @@ class ServerStats(commands.Cog):
         _, _, seconds, days = PERIODS[period]
         since = time.time() - seconds if seconds else 0
         st = await self.bot.db.server_stats(guild.id, since, days)
+        st["top_streak"] = await self.bot.db.top_streak(guild.id, since)
         embed = build_embed(period, st)
         try:
             circulation = await self.bot.db.circulation_history(guild.id, since)

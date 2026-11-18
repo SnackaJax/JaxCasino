@@ -10,7 +10,8 @@ from discord.ext import commands
 
 import config
 from database import Database
-from utils.checks import NotAdmin, WrongChannel
+from utils.checks import NotAdmin, WrongChannel, is_admin
+from utils.crux import crux_embed
 from utils.economy import refund_unposted, send_error
 
 log = logging.getLogger("jaxcasino")
@@ -37,6 +38,7 @@ COGS = [
     "cogs.shop",
     "cogs.spinfrenzy",
     "cogs.adminpanel",
+    "cogs.crux",
 ]
 
 
@@ -113,6 +115,17 @@ class GambleTree(app_commands.CommandTree):
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.guild is None:
             await interaction.response.send_message("This bot only works inside a server.", ephemeral=True)
+            return False
+        # /crux: someone on a break can only look at their crux (/crux); admins keep their admin commands
+        until = await interaction.client.db.crux_until(interaction.guild.id, interaction.user.id)
+        if until:
+            cmd = interaction.command
+            root = (cmd.root_parent or cmd).name if cmd else ""
+            if root == "crux" or (root in ("admin", "config")
+                                  and await is_admin(interaction.client, interaction.user, interaction.guild)):
+                return True
+            if interaction.type == discord.InteractionType.application_command:
+                await interaction.response.send_message(embed=crux_embed(until), ephemeral=True)
             return False
         return True
 

@@ -58,6 +58,7 @@ async def players(db: Database, guild_id: int) -> list[dict]:
                                       FROM game_log WHERE guild_id=? AND wagered>0 AND game != 'lottery')
                                 GROUP BY user_id""", (week_start, guild_id))
     play_time = {r["user_id"]: (r["secs"] or 0, r["week"] or 0) for r in played}
+    cruxes = await db.cruxes(guild_id)
     mix: dict[int, dict] = {}
     net: dict[int, int] = {}
     last: dict[int, float] = {r["user_id"]: r["last"] for r in seen}
@@ -77,6 +78,8 @@ async def players(db: Database, guild_id: int) -> list[dict]:
             "wagered": u["total_wagered"], "won": u["total_won"], "biggest_win": u["biggest_win"],
             "net": net.get(uid, 0), "last_active": last.get(uid) or (u["last_daily"] or None),
             "played": round(play_time.get(uid, (0, 0))[0]), "played_week": round(play_time.get(uid, (0, 0))[1]),
+            "crux_until": cruxes[uid][1] if uid in cruxes else None,
+            "crux_started": cruxes[uid][0] if uid in cruxes else None,
             "mix": mix.get(uid, {}),
         })
     return out

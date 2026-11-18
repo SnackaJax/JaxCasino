@@ -17,6 +17,7 @@ Routes
   GET  /api/players/{id}?guild=      one player's stats, games and admin edits
   GET  /api/players/{id}/history?guild=&from=&to=   their balance over that time (unix times)
   POST /api/players/{id}/balance     {guild, action: set|add|remove, amount, note?}; nothing is posted in Discord
+  POST /api/players/{id}/crux/remove {guild}: ends the player's /crux (break from the casino) early
   GET  /api/edits?guild=             the latest balance edits made in the panel
   GET  /api/activity?guild=&before=&after=   games and other credit movements, newest first
   everything else                    the page (admin_panel/static)
@@ -226,6 +227,21 @@ class AdminPanel:
         points = await queries.balance_window(self.db, gid, uid, start, end)
         return web.json_response({"from": start, "to": end, "points": points})
 
+    async def remove_crux(self, request: web.Request) -> web.Response:
+        """Ends a player's /crux early (only an admin can). {guild}"""
+        uid = self.user_arg(request)
+        try:
+            body = await request.json()
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            raise web.HTTPBadRequest(text="bad JSON")
+        gid = str(body.get("guild", "")) if isinstance(body, dict) else ""
+        if not gid.isdigit():
+            raise web.HTTPBadRequest(text="guild is missing")
+        if not await self.db.remove_crux(int(gid), uid):
+            return web.json_response({"error": "That player doesn't have a crux (any more)."}, status=409)
+        log.info("Admin panel: ended the crux of %s in %s", uid, gid)
+        return web.json_response({"ok": True})
+
     async def edit_balance(self, request: web.Request) -> web.Response:
         uid = self.user_arg(request)
         try:
@@ -314,6 +330,7 @@ class AdminPanel:
         r.add_get("/api/players/{user_id}", self.player)
         r.add_get("/api/players/{user_id}/history", self.player_history)
         r.add_post("/api/players/{user_id}/balance", self.edit_balance)
+        r.add_post("/api/players/{user_id}/crux/remove", self.remove_crux)
         r.add_get("/api/edits", self.edits)
         r.add_get("/api/activity", self.activity)
         r.add_route("*", "/api/{tail:.*}", self._api_404)

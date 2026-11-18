@@ -73,6 +73,9 @@ export type Player = Person & {
   /** time played in seconds, worked out from when their games happened (all time / the last 7 days) */
   played: number
   played_week: number
+  /** a running /crux (a break from the casino the player took): when it started and ends; null without one */
+  crux_until: number | null
+  crux_started: number | null
   mix: Record<string, number>
 }
 

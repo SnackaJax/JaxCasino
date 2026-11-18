@@ -61,6 +61,7 @@ type PlayerRow = {
   net: number
   biggest_win: number
   played: number
+  crux: number
   last_active: Date
   avatar: string | null
   mix: Record<string, number>
@@ -196,6 +197,26 @@ const tableSchema = createTableSchema({
     .filterable("slider", { min: 0, max: 1000 })
     .sortable()
     .size(100),
+  crux: col
+    .number()
+    .label("Crux")
+    .description("break from the casino")
+    .display("custom", {
+      cell: (v: unknown) => {
+        const until = v as number
+        const left = until - Date.now() / 1000
+        return left > 0 ? (
+          <span className="tabular text-info" title={`On a /crux break until ${new Date(until * 1000).toLocaleString()}`}>
+            🧊 {duration(left)}
+          </span>
+        ) : (
+          <Dash />
+        )
+      },
+    })
+    .notFilterable()
+    .sortable()
+    .size(100),
   last_active: col
     .timestamp()
     .label("Last active")
@@ -231,6 +252,7 @@ function toRows(players: Player[]): PlayerRow[] {
     winrate: p.games ? (p.wins / p.games) * 100 : 0,
     wagered: p.wagered,
     played: p.played,
+    crux: p.crux_until ?? 0,
     net: p.net,
     biggest_win: p.biggest_win,
     last_active: new Date((p.last_active ?? 0) * 1000),

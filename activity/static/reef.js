@@ -95,6 +95,7 @@ function onMessage(m) {
       break;
     case 'fatal':
       if (m.code === 'session' && retryAfterExpiredSession()) break;
+      if (m.code === 'crux' && window.showCrux) window.showCrux(m.until);   // on a /crux break
       showFatal(m.message); try { ws.close(); } catch (e) { /* closed */ }
       break;
     default: break;

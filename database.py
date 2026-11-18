@@ -133,6 +133,24 @@ CREATE TABLE IF NOT EXISTS admin_log (
     ts       REAL    NOT NULL
 );
 CREATE INDEX IF NOT EXISTS admin_log_guild_ts ON admin_log (guild_id, ts);
+-- /crux: a player's self-chosen break from the bot and the Activity, until `until` (unix time). Only an admin
+-- (/admin uncrux, or the admin panel) can end it early.
+CREATE TABLE IF NOT EXISTS crux (
+    guild_id INTEGER NOT NULL,
+    user_id  INTEGER NOT NULL,
+    until    REAL    NOT NULL,
+    started  REAL    NOT NULL,
+    PRIMARY KEY (guild_id, user_id)
+);
+-- Each player's longest winstreak per game (Activity blackjack and poker seats), and when they reached it.
+CREATE TABLE IF NOT EXISTS streaks (
+    guild_id INTEGER NOT NULL,
+    user_id  INTEGER NOT NULL,
+    game     TEXT    NOT NULL,
+    best     INTEGER NOT NULL,
+    ts       REAL    NOT NULL,
+    PRIMARY KEY (guild_id, user_id, game)
+);
 """
 
 
@@ -633,6 +651,71 @@ class Database:
             return rows
 
     # --------------------------------------------------------------- settings
+    # ------------------------------------------------------------------- crux
+    async def crux_until(self, guild_id: int, user_id: int) -> float | None:
+        """When the player's crux ends, or None if they don't have one (an ended crux is cleared here)."""
+        cur = await self.conn.execute("SELECT until FROM crux WHERE guild_id=? AND user_id=?", (guild_id, user_id))
+        row = await cur.fetchone()
+        if row is None:
+            return None
+        if row["until"] > time.time():
+            return row["until"]
+        async with self.lock:
+            await self.conn.execute("DELETE FROM crux WHERE guild_id=? AND user_id=? AND until<=?",
+                                    (guild_id, user_id, time.time()))
+            await self.conn.commit()
+        return None
+
+    async def set_crux(self, guild_id: int, user_id: int, until: float) -> None:
+        async with self.lock:
+            await self.conn.execute(
+                """INSERT INTO crux (guild_id, user_id, until, started) VALUES (?, ?, ?, ?)
+                   ON CONFLICT (guild_id, user_id) DO UPDATE SET until=excluded.until""",
+                (guild_id, user_id, until, time.time()))
+            await self.conn.commit()
+
+    async def remove_crux(self, guild_id: int, user_id: int) -> bool:
+        """Ends a crux early. Returns whether there was one running."""
+        async with self.lock:
+            cur = await self.conn.execute("DELETE FROM crux WHERE guild_id=? AND user_id=? AND until>?",
+                                          (guild_id, user_id, time.time()))
+            await self.conn.execute("DELETE FROM crux WHERE guild_id=? AND user_id=?", (guild_id, user_id))
+            await self.conn.commit()
+            return cur.rowcount > 0
+
+    async def cruxes(self, guild_id: int) -> dict[int, tuple[float, float]]:
+        """Every running crux in the server: user id -> (started, until)."""
+        cur = await self.conn.execute("SELECT user_id, started, until FROM crux WHERE guild_id=? AND until>?",
+                                      (guild_id, time.time()))
+        return {r["user_id"]: (r["started"], r["until"]) for r in await cur.fetchall()}
+
+    # ---------------------------------------------------------------- streaks
+    async def record_streak(self, guild_id: int, user_id: int, game: str, streak: int) -> None:
+        """Keeps the player's longest winstreak in this game (only a new record is written)."""
+        if streak <= 0:
+            return
+        async with self.lock:
+            await self.conn.execute(
+                """INSERT INTO streaks (guild_id, user_id, game, best, ts) VALUES (?, ?, ?, ?, ?)
+                   ON CONFLICT (guild_id, user_id, game) DO UPDATE SET best=excluded.best, ts=excluded.ts
+                   WHERE excluded.best > streaks.best""",
+                (guild_id, user_id, game, streak, time.time()))
+            await self.conn.commit()
+
+    async def best_streaks(self, guild_id: int, user_id: int) -> dict[str, int]:
+        """The player's longest winstreak per game."""
+        cur = await self.conn.execute("SELECT game, best FROM streaks WHERE guild_id=? AND user_id=?",
+                                      (guild_id, user_id))
+        return {r["game"]: r["best"] for r in await cur.fetchall()}
+
+    async def top_streak(self, guild_id: int, since: float = 0) -> dict | None:
+        """The longest winstreak in the server reached since `since`: user_id, game, best, ts."""
+        cur = await self.conn.execute(
+            "SELECT user_id, game, best, ts FROM streaks WHERE guild_id=? AND ts>=? ORDER BY best DESC, ts LIMIT 1",
+            (guild_id, since))
+        row = await cur.fetchone()
+        return dict(row) if row else None
+
     async def get_setting(self, guild_id: int, key: str, default: Any = None) -> Any:
         cur = await self.conn.execute(
             "SELECT value FROM settings WHERE guild_id=? AND key=?", (guild_id, key)

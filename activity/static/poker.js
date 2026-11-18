@@ -24,6 +24,23 @@ let buyIn = 1000, seatsWanted = 6;
 const srv = () => Date.now() + offset;
 
 // ------------------------------------------------------------------ connection
+
+// The winstreak medal on a seat's name plate: rounds won in a row at that seat (a push leaves it, a loss ends it),
+// as a number on a little medal: bronze, silver from 3, gold from 5, glowing gold from 10.
+function setStreak(el, n) {
+  el.classList.toggle('hidden', !(n >= 1));
+  if (!(n >= 1)) return;
+  const text = String(n);
+  if (el.textContent !== text) el.textContent = text;
+  el.title = n === 1 ? '1 win at this seat' : `${n} wins in a row at this seat`;
+  const tier = n >= 10 ? 'blaze' : n >= 5 ? 'gold' : n >= 3 ? 'silver' : 'bronze';
+  if (el.dataset.tier !== tier) {
+    el.classList.remove('bronze', 'silver', 'gold', 'blaze');
+    el.classList.add(tier);
+    el.dataset.tier = tier;
+  }
+}
+
 function loading(text) { $('loading').classList.remove('hidden'); $('loadingText').textContent = text; }
 function showFatal(text) {
   fatal = true; loading(text); $('loading').querySelector('.spinner').classList.add('hidden');
@@ -61,6 +78,7 @@ function onMessage(m) {
     case 'error': toast(m.message); sfx.error(); setActButtons(true); break;
     case 'fatal':
       if (m.code === 'session' && retryAfterExpiredSession()) break;
+      if (m.code === 'crux' && window.showCrux) window.showCrux(m.until);   // on a /crux break
       showFatal(m.message); try { ws.close(); } catch (e) { /* closed */ }
       break;
     default: break;
@@ -373,7 +391,7 @@ function buildTable(st) {
     cards.forEach((c) => hand.appendChild(c));
     const plate = document.createElement('div'); plate.className = 'plate';
     plate.innerHTML = `<div class="ring">${avatarHtml(s)}</div><div class="who"><div class="nm">${esc(s.name)}</div>
-      <div class="stk"></div></div><div class="tag hidden"></div>`;
+      <div class="stk"></div></div><div class="tag hidden"></div><span class="streak hidden"></span>`;
     root.append(hand, plate);
     host.appendChild(root);
     resizer.observe(root);
@@ -382,7 +400,7 @@ function buildTable(st) {
     bet.innerHTML = `<div class="chips">${[0, 1, 2].map((k) => `<div class="chip" style="top:${-k * 3}px;--c:${CHIP_COLORS[(i + k) % CHIP_COLORS.length]}"></div>`).join('')}</div><span></span>`;
     host.appendChild(bet);
     return { root, hand: cards, plate, ring: plate.querySelector('.ring'), stk: plate.querySelector('.stk'),
-      tag: plate.querySelector('.tag'), bet, betAmt: bet.querySelector('span') };
+      tag: plate.querySelector('.tag'), streak: plate.querySelector('.streak'), bet, betAmt: bet.querySelector('span') };
   });
   dealerEl = document.createElement('div');
   dealerEl.className = 'dealer-btn hidden'; dealerEl.textContent = 'D';
@@ -405,6 +423,7 @@ function renderStatic(st, opts = {}) {
     const e = seatEls[i];
     if (!e) return;
     setAmount(e.stk, s.stack);
+    setStreak(e.streak, s.streak || 0);
     e.root.classList.toggle('turn', st.turn === i);
     e.root.classList.toggle('folded', s.in_hand && s.folded);
     e.root.classList.toggle('offline', !s.online);

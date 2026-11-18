@@ -51,6 +51,7 @@ from aiohttp import web
 from cogs.blackjack import MAX_HANDS, card_value, draw_upcard, hand_value, is_blackjack
 from utils.cards import Card, new_deck
 from utils.economy import Wager
+from activity.fatal import fatal_text
 
 log = logging.getLogger("jaxcasino.activity.blackjack")
 
@@ -177,6 +178,7 @@ class Seat:
     side_results: list = field(default_factory=list)
     side_won: int = 0
     side_done: bool = False          # this round's side bets have been paid (or taken)
+    streak: int = 0                  # rounds won in a row at this seat: a push leaves it, a loss ends it
 
     @property
     def side_total(self) -> int:
@@ -297,7 +299,7 @@ class Table:
                           "online": s.user_id in self.room.viewers, "ready": s.ready, "leaving": s.leaving,
                           "bet": s.bet if self.phase == "betting" else sum(h.stake for h in live),
                           "hands": [h.view(s.user_id == user_id) for h in s.hands], "last_bet": s.last_bet,
-                          "won": s.won if self.phase == "settle" else 0,
+                          "won": s.won if self.phase == "settle" else 0, "streak": s.streak,
                           "staked": sum(h.stake for h in s.hands) + (s.side_total if s.hands else 0),
                           "side": {k: 0 for k in SIDE_BETS} if s.side_done else dict(s.side),
                           "last_side": dict(s.last_side), "side_results": s.side_results})
@@ -805,6 +807,14 @@ class Table:
                 h.done = True
                 total += h.payout
                 payouts.append({"seat": i, "hand": j, "result": h.result, "payout": h.payout, "stake": h.stake})
+            # the winstreak goes by the main hands (side bets are extras): won more than staked is a win, less a
+            # loss, the same a push (which leaves the streak as it is)
+            main_net = sum(h.payout for h in s.hands) - sum(h.stake for h in s.hands)
+            if main_net > 0:
+                s.streak += 1
+                await self.db.record_streak(self.guild_id, s.user_id, GAME, s.streak)
+            elif main_net < 0:
+                s.streak = 0
             staked = sum(h.stake for h in s.hands) + s.side_total
             total += s.side_won
             if s.wager and not s.wager.settled:
@@ -1126,8 +1136,7 @@ class BlackjackHub:
             hello = json.loads(first.data)
             session, guild_id, member, problem = await self.server.admit(hello, ws)
             if problem:
-                await ws.send_str(json.dumps({"type": "fatal", "message": problem,
-                                              "code": "session" if "session" in problem.lower() else ""}))
+                await ws.send_str(fatal_text(problem))
                 return ws
             room = self.rooms.get(guild_id)
             if room is None:

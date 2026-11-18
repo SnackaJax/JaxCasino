@@ -473,3 +473,19 @@ body.discord-mobile #app { padding-top: max(env(safe-area-inset-top), var(--disc
   .btn-hit, .btn-stand, .btn-double, .btn-split { min-width: 0; }
   .my-total { width: auto; min-width: 40px; }
 }
+
+/* the winstreak medal on a name plate (see setStreak): the number of wins in a row on a little medal with a ribbon */
+.plate .streak { position: absolute; top: -12px; right: -9px; z-index: 3; min-width: 22px; height: 22px; padding: 0 4px;
+  border-radius: 999px; display: grid; place-items: center; font-size: 11px; font-weight: 900; line-height: 1;
+  font-variant-numeric: tabular-nums; pointer-events: auto; cursor: default; color: #3a2000; border: 2px solid #7a4a1a;
+  background: radial-gradient(circle at 35% 30%, #f3c08a, #c27a3a 60%, #8a4f1e); box-shadow: 0 2px 6px rgba(0,0,0,.55); }
+/* the ribbon behind the medal */
+.plate .streak::before { content: ""; position: absolute; z-index: -1; left: 50%; top: -7px; width: 12px; height: 10px;
+  transform: translateX(-50%); background: linear-gradient(90deg, #2b5fc0 0 50%, #c8302c 50%);
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 70%, 0 100%); }
+.plate .streak.silver { color: #1d2430; border-color: #6c7686; background: radial-gradient(circle at 35% 30%, #ffffff, #c4ccd8 55%, #7d8796); }
+.plate .streak.gold, .plate .streak.blaze { color: #3a2400; border-color: #9a6a00;
+  background: radial-gradient(circle at 35% 30%, #fff3b0, #f0c040 55%, #b8860b); }
+.plate .streak.blaze { box-shadow: 0 0 14px rgba(255, 200, 60, .95); animation: streakPulse 1.2s ease-in-out infinite; }
+@keyframes streakPulse { 50% { transform: scale(1.12); } }
+@media (prefers-reduced-motion: reduce) { .plate .streak.blaze { animation: none; } }

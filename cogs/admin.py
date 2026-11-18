@@ -1,4 +1,5 @@
 """Admin credit management and bot configuration."""
+import logging
 import time
 
 import discord
@@ -13,6 +14,8 @@ from utils.shop import ITEMS, PRICE_LABELS, get_prices, item_price_text, price_t
 from utils.views import ConfirmView
 
 MAX_AMOUNT = 10**15
+
+log = logging.getLogger("jaxcasino.admin")
 
 
 def admin_embed(text: str, color=discord.Color.blurple()) -> discord.Embed:
@@ -64,6 +67,20 @@ class Admin(commands.Cog):
         await self.bot.db.set_balance(interaction.guild_id, user.id, amount)
         await interaction.response.send_message(embed=admin_embed(
             f"✏️ Set {user.mention}'s balance to {fmt(amount)}."))
+
+    @admin.command(name="uncrux", description="End a player's crux (their break from the casino) early.")
+    @admin_only()
+    async def uncrux(self, interaction: discord.Interaction, user: discord.Member):
+        until = await self.bot.db.crux_until(interaction.guild_id, user.id)
+        if not until:
+            await interaction.response.send_message(embed=admin_embed(f"{user.mention} doesn't have a crux."),
+                                                    ephemeral=True)
+            return
+        await self.bot.db.remove_crux(interaction.guild_id, user.id)
+        log.info("Crux of %s in guild %s ended early by %s", user.id, interaction.guild_id, interaction.user.id)
+        await interaction.response.send_message(embed=admin_embed(
+            f"🧊 Ended {user.mention}'s crux (it would have run until <t:{int(until)}:f>). They can play again.",
+            discord.Color.green()))
 
     async def _everyone(self, guild: discord.Guild) -> list[int]:
         if not guild.chunked:

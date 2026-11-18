@@ -33,6 +33,7 @@ import config
 from utils.cards import Card, new_deck
 from utils.hand_eval import best_hand, hand_name
 from utils.rng import rng
+from activity.fatal import fatal_text
 
 log = logging.getLogger("jaxcasino.activity.poker")
 
@@ -80,6 +81,7 @@ class Seat:
     leaving: bool = False
     timeouts: int = 0
     last: str = ""         # last action this hand, shown on the seat ("Check", "Raise 400", …)
+    streak: int = 0        # hands won in a row at this seat: won more than put in; even leaves it, less ends it
 
     def reset_for_hand(self) -> None:
         self.hole = []
@@ -179,7 +181,7 @@ class Table:
         me = self.seat_of(user_id)
         seats = []
         for i, s in enumerate(self.seats):
-            info = {"id": str(s.user_id), "name": s.name, "avatar": s.avatar, "stack": s.stack,
+            info = {"id": str(s.user_id), "name": s.name, "avatar": s.avatar, "stack": s.stack, "streak": s.streak,
                     "bet": s.bet if self.phase == "playing" else 0, "in_hand": playing and s.in_hand,
                     "folded": s.folded, "all_in": s.all_in, "leaving": s.leaving, "last": s.last,
                     "won": self.won.get(s.user_id, 0) if self.phase == "between" else 0,
@@ -544,6 +546,15 @@ class Table:
         self.phase = "between"
         self.turn = -1
         for s in self.seats:
+            if not s.in_hand:      # sat this hand out
+                continue
+            net = self.won.get(s.user_id, 0) - s.committed
+            if net > 0:
+                s.streak += 1
+                await self.db.record_streak(self.guild_id, s.user_id, GAME, s.streak)
+            elif net < 0:
+                s.streak = 0
+        for s in self.seats:
             await self.db.update_escrow(s.escrow_id, s.stack)
         self.next_task = asyncio.create_task(self._next_hand_later())
 
@@ -773,8 +784,7 @@ class PokerHub:
             hello = json.loads(first.data)
             session, guild_id, member, problem = await self.server.admit(hello, ws)
             if problem:
-                await ws.send_str(json.dumps({"type": "fatal", "message": problem,
-                                              "code": "session" if "session" in problem.lower() else ""}))
+                await ws.send_str(fatal_text(problem))
                 return ws
             room = self.rooms.get(guild_id)
             if room is None:

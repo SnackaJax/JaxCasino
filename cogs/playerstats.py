@@ -195,6 +195,11 @@ class PlayerStats(commands.Cog):
         net = user["total_won"] - user["total_wagered"]
         lines.append(f"🎮 **All-time:** {played:,} games · {winrate} won · {fmt(user['total_wagered'])} wagered · "
                      f"net {'+' if net >= 0 else '-'}{fmt(abs(net))} · best win {fmt(user['biggest_win'])}")
+        streaks = await db.best_streaks(guild.id, member.id)
+        if streaks:
+            g, n = max(streaks.items(), key=lambda kv: kv[1])
+            others = " · ".join(f"{game_name(k)} {v}" for k, v in sorted(streaks.items()) if k != g)
+            lines.append(f"🔥 **Best winstreak:** {n} in a row at {game_name(g)}" + (f" ({others})" if others else ""))
         label = PERIODS[period][0]
         embed = discord.Embed(title=f"📈 {member.display_name} — {label.lower() if period != 'all' else 'all time'}",
                               description="\n".join(lines), color=discord.Color.blurple())

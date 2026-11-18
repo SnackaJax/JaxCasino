@@ -88,6 +88,7 @@ function onMessage(m) {
     case 'error': toast(m.message); sfx.error(); if (T) renderControls(T); break;
     case 'fatal':
       if (m.code === 'session' && retryAfterExpiredSession()) break;
+      if (m.code === 'crux' && window.showCrux) window.showCrux(m.until);   // on a /crux break
       showFatal(m.message); try { ws.close(); } catch (e) { /* closed */ }
       break;
     default: break;
@@ -168,6 +169,22 @@ function myBets(st) {
   return { seats, any: seats.some((s) => s.bet), sides: seats.some((s) => s.side.pp + s.side.t3),
     rebet: seats.filter((s) => s.last_bet && !s.bet && !(s.side.pp + s.side.t3)),
     ready: seats.length > 0 && seats.every((s) => s.ready) };
+}
+
+// The winstreak medal on a seat's name plate: rounds won in a row at that seat (a push leaves it, a loss ends it),
+// as a number on a little medal: bronze, silver from 3, gold from 5, glowing gold from 10.
+function setStreak(el, n) {
+  el.classList.toggle('hidden', !(n >= 1));
+  if (!(n >= 1)) return;
+  const text = String(n);
+  if (el.textContent !== text) el.textContent = text;
+  el.title = n === 1 ? '1 win at this seat' : `${n} wins in a row at this seat`;
+  const tier = n >= 10 ? 'blaze' : n >= 5 ? 'gold' : n >= 3 ? 'silver' : 'bronze';
+  if (el.dataset.tier !== tier) {
+    el.classList.remove('bronze', 'silver', 'gold', 'blaze');
+    el.classList.add(tier);
+    el.dataset.tier = tier;
+  }
 }
 
 // ------------------------------------------------------------------ chips
@@ -693,11 +710,12 @@ function buildTable(st) {
         <div class="stack"></div><span class="side-amt hidden"></span></div>`).join('')}
       <button class="sit-btn hidden">SIT</button>
       <div class="plate"><div class="ring"></div><div class="who"><div class="nm"></div><div class="st"></div></div>
-        <button class="unsit hidden" title="Leave this seat">×</button></div>`;
+        <button class="unsit hidden" title="Leave this seat">×</button><span class="streak hidden"></span></div>`;
     host.appendChild(root);
     const e = { root, circle: root.querySelector('.circle'), stack: root.querySelector('.stack'), amt: root.querySelector('.bet-amt'),
       sit: root.querySelector('.sit-btn'), plate: root.querySelector('.plate'), ring: root.querySelector('.ring'),
-      nm: root.querySelector('.nm'), st: root.querySelector('.st'), unsit: root.querySelector('.unsit'), id: null, sides: {} };
+      nm: root.querySelector('.nm'), st: root.querySelector('.st'), unsit: root.querySelector('.unsit'),
+      streak: root.querySelector('.streak'), id: null, sides: {} };
     for (const k of SIDE) {
       const el = root.querySelector(`.side-spot[data-k="${k}"]`);
       e.sides[k] = { root: el, stack: el.querySelector('.stack'), amt: el.querySelector('.side-amt'), shown: 0 };
@@ -784,7 +802,7 @@ function renderStatic(st, opts = {}) {
     if (!s) e.sit.textContent = mine.length ? '+ SEAT' : 'SIT';
     if (!s) {
       setStack(i, 0); SIDE.forEach((k) => setSideStack(i, k, 0));
-      e.root.className = 'spot vacant'; e.id = null; return;
+      e.root.className = 'spot vacant'; e.id = null; setStreak(e.streak, 0); return;
     }
     if (e.id !== s.id) {
       e.id = s.id;
@@ -792,6 +810,7 @@ function renderStatic(st, opts = {}) {
     }
     const name = s.name + (mine.includes(i) ? ' (you)' : '');
     if (e.nm.textContent !== name) e.nm.textContent = name;
+    setStreak(e.streak, s.streak || 0);
     const turn = st.turn && st.turn.seat === i;
     e.root.classList.toggle('mine', mine.includes(i));
     // the seat(s) your chips go to: all of them while copying bets, else the one in focus

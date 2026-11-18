@@ -36,6 +36,7 @@ import config
 from utils import banger_engine as E
 from utils.economy import Wager
 from utils.rng import rng
+from activity.fatal import fatal_text
 
 log = logging.getLogger("jaxcasino.activity.banger")
 
@@ -384,8 +385,7 @@ class BangerHub:
             hello = json.loads(first.data)
             table, player, problem = await self.join(hello, ws)
             if problem:
-                await ws.send_str(json.dumps({"type": "fatal", "message": problem,
-                                              "code": "session" if "session" in problem.lower() else ""}))
+                await ws.send_str(fatal_text(problem))
                 return ws
             window_start, count = time.monotonic(), 0
             async for msg in ws:

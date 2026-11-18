@@ -1,8 +1,8 @@
 import * as React from "react"
-import { useQuery } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { PencilSimpleIcon } from "@phosphor-icons/react"
 
-import { api, type Player, type PlayerDetail } from "@/app/api"
+import { api, ApiError, type Player, type PlayerDetail } from "@/app/api"
 import { BalanceChart } from "@/app/balance-chart"
 import { ago, compact, credits, duration, gameColor, gameName, moneyName, pct, signed } from "@/app/format"
 import { Badge } from "@/components/ui/badge"
@@ -56,6 +56,10 @@ function PlayerSheetBody({ guildId, player, onEdit }: { guildId: string; player:
           <PencilSimpleIcon data-icon="inline-start" /> Edit balance
         </Button>
       </div>
+
+      {player.crux_until && player.crux_until > Date.now() / 1000 ? (
+        <CruxBanner guildId={guildId} player={player} />
+      ) : null}
 
       <div className="flex flex-wrap gap-1.5">
         {player.username ? <Badge variant="outline">@{player.username}</Badge> : null}
@@ -155,6 +159,33 @@ function Stat({ label, value, tone, title }: { label: string; value: string; ton
       <div className={cn("tabular text-sm font-medium", tone === "good" && "text-success", tone === "bad" && "text-error")}>
         {value}
       </div>
+    </div>
+  )
+}
+
+/** The player is on a /crux break: when it ends, and the one way to end it early (besides /admin uncrux). */
+function CruxBanner({ guildId, player }: { guildId: string; player: Player }) {
+  const qc = useQueryClient()
+  const until = player.crux_until ?? 0
+  const end = useMutation({
+    mutationFn: () => api.post(`/api/players/${player.id}/crux/remove`, { guild: guildId }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["players"] }),
+  })
+  return (
+    <div className="border-info/40 bg-info/10 flex items-center justify-between gap-3 rounded-md border px-3 py-2.5">
+      <div className="min-w-0 text-xs">
+        <div className="font-medium">🧊 On a crux: {duration(until - Date.now() / 1000)} left</div>
+        <div className="text-muted-foreground">
+          Until {new Date(until * 1000).toLocaleString()}
+          {player.crux_started ? ` · started ${ago(player.crux_started)}` : ""}. No games or commands for them until then.
+        </div>
+        {end.isError ? (
+          <div className="text-destructive mt-1">{end.error instanceof ApiError ? end.error.message : String(end.error)}</div>
+        ) : null}
+      </div>
+      <Button size="sm" variant="outline" disabled={end.isPending} onClick={() => end.mutate()}>
+        {end.isPending ? "Ending…" : "Remove crux"}
+      </Button>
     </div>
   )
 }

@@ -146,6 +146,7 @@
   </div>
   <!-- The chosen game runs in this frame, so the Activity never leaves this page (see auth.js for why). -->
   <iframe id="game" class="hidden" title="Game" allow="autoplay"></iframe>
+  <script src="/static/crux.js"></script>
   <script type="module">
     import { signIn, becomeShell } from '/static/auth.js';
     const p = new URLSearchParams(location.search);
@@ -172,6 +173,10 @@
       document.getElementById('spinner').classList.add('hidden');
       if (auth.error) { note.textContent = auth.error; return; }
       note.textContent = '';
+      // on a /crux break? then the crux screen, not the games
+      fetch('/api/crux', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session: auth.session, ...(auth.joinInfo || {}) }) })
+        .then((r) => r.json()).then((d) => { if (d.until && window.showCrux) window.showCrux(d.until); }).catch(() => {});
       // games that are still being built stay hidden until the server switches them on
       if ((auth.cfg && auth.cfg.games || []).includes('reefrush')) document.getElementById('reefCard').classList.remove('hidden');
       if ((auth.cfg && auth.cfg.games || []).includes('raccoonheist')) document.getElementById('heistCard').classList.remove('hidden');

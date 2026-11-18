@@ -55,6 +55,7 @@ from activity.reef import ReefHub
 from activity.voice import DealerVoice
 from utils.economy import Wager
 from utils.rng import rng
+from activity.fatal import crux_problem, fatal_text
 
 log = logging.getLogger("jaxcasino.activity")
 
@@ -574,6 +575,7 @@ class ActivityServer:
             web.get("/api/config", self.api_config),
             web.post("/api/token", self.api_token),
             web.post("/api/start-game", self.api_start_game),
+            web.post("/api/crux", self.api_crux),
             web.post("/api/voice", self.api_voice),
             web.get("/avatar/{user_id}", self.avatar),
             web.get("/ws", self.websocket),
@@ -839,8 +841,7 @@ class ActivityServer:
             hello = json.loads(first.data)
             inst, player, problem = await self.join(hello, ws)
             if problem:
-                await ws.send_str(json.dumps({"type": "fatal", "message": problem,
-                                              "code": "session" if "session" in problem.lower() else ""}))
+                await ws.send_str(fatal_text(problem))
                 return ws
             window_start, count = time.monotonic(), 0
             async for msg in ws:
@@ -908,8 +909,47 @@ class ActivityServer:
         member = await self.resolve_member(guild_id, session.user_id)
         if member is None:
             return None, None, None, "You need to be a member of this server (and the bot must be in it) to play."
+        until = await self.db.crux_until(guild_id, session.user_id)
+        if until:   # on a /crux break
+            return None, None, None, crux_problem(until)
         open_now.add(ws)
         return session, guild_id, member, None
+
+    async def kick_crux(self, guild_id: int, user_id: int, until: float) -> None:
+        """A player just started a /crux: their open games close and show the crux screen."""
+        text = fatal_text(crux_problem(until))
+        for ws in list(self.user_sockets.get(user_id, ())):
+            if not ws.closed:
+                try:
+                    await ws.send_str(text)
+                    await ws.close()
+                except Exception:
+                    pass
+
+    async def api_crux(self, request: web.Request) -> web.Response:
+        """The menu asks right after signing in, so a player on a /crux break sees the crux screen straight away
+        instead of picking a game first. {session, instance_id, guild_id} -> {until} (null: no crux)."""
+        try:
+            body = await request.json()
+            session = self.sessions.get(str(body["session"]))
+        except (ValueError, KeyError, TypeError):
+            return web.json_response({"error": "missing session"}, status=400)
+        if session is None or session.expires < time.time():
+            return web.json_response({"until": None})
+        if self.dev_guild_id:
+            guild_id = self.dev_guild_id
+        else:
+            instance_id = str(body.get("instance_id") or "")
+            if not INSTANCE_ID.fullmatch(instance_id):
+                return web.json_response({"until": None})
+            try:
+                claimed = int(body.get("guild_id") or 0) or None
+            except (TypeError, ValueError):
+                claimed = None
+            guild_id, problem = await self.verified_guild(instance_id, claimed, session.user_id)
+            if problem or not guild_id:
+                return web.json_response({"until": None})
+        return web.json_response({"until": await self.db.crux_until(guild_id, session.user_id)})
 
     async def join(self, hello: dict, ws) -> tuple[Instance | None, Player | None, str | None]:
         session, guild_id, member, problem = await self.admit(hello, ws)

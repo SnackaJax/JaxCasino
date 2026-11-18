@@ -13,9 +13,13 @@ Routes
   POST /api/login, /api/logout       {password}
   GET  /api/guilds                   servers with players
   GET  /api/overview?guild=&period=  stats for the dashboard (period: 24h, 7d, 30d, all)
+  GET  /api/insights?guild=&period=  the overview's extra charts: house result, players, going broke, heatmap,
+                                     where credits came from, bet sizes, wealth spread and records
+  GET  /api/games?guild=&period=     every game's numbers, payback over time against its expected payback
   GET  /api/players?guild=           every player with balance and totals
   GET  /api/players/{id}?guild=      one player's stats, games and admin edits
   GET  /api/players/{id}/history?guild=&from=&to=   their balance over that time (unix times)
+  GET  /api/players/{id}/insights?guild=   when they play, net per day, game mix, streaks, going broke, payments
   POST /api/players/{id}/balance     {guild, action: set|add|remove, amount, note?}; nothing is posted in Discord
   POST /api/players/{id}/crux        {guild, duration}: puts the player on a crux (like /crux), e.g. "3d" or "1d12h"
   POST /api/players/{id}/crux/remove {guild}: ends the player's /crux (break from the casino) early
@@ -36,7 +40,7 @@ from typing import Any, Awaitable, Callable, Protocol
 
 from aiohttp import web
 
-from admin_panel import queries
+from admin_panel import insights, queries
 from database import Database
 from utils.crux import MAX_SECONDS, MIN_SECONDS, describe, parse_duration
 
@@ -184,14 +188,54 @@ class AdminPanel:
 
     async def overview(self, request: web.Request) -> web.Response:
         gid = self.guild_arg(request)
-        period = request.query.get("period", "30d")
-        if period not in queries.PERIODS:
-            raise web.HTTPBadRequest(text="unknown period")
-        data = await queries.overview(self.db, gid, period)
+        data = await queries.overview(self.db, gid, self.period_arg(request))
         recent = await queries.edits(self.db, gid, 8)
         for e in recent:
             e.update(self.who(gid, e["user_id"]))
         data["edits"] = recent
+        return web.json_response(data)
+
+    def period_arg(self, request: web.Request) -> str:
+        period = request.query.get("period", "24h")
+        if period not in queries.PERIODS:
+            raise web.HTTPBadRequest(text="unknown period")
+        return period
+
+    def people(self, gid: int, data) -> dict[str, dict]:
+        """Names and avatars for every user_id anywhere in `data`."""
+        found: dict[str, dict] = {}
+
+        def walk(x):
+            if isinstance(x, dict):
+                uid = x.get("user_id")
+                if isinstance(uid, str) and uid not in found:
+                    found[uid] = self.who(gid, uid)
+                for v in x.values():
+                    walk(v)
+            elif isinstance(x, list):
+                for v in x:
+                    walk(v)
+        walk(data)
+        return found
+
+    async def insights(self, request: web.Request) -> web.Response:
+        gid = self.guild_arg(request)
+        data = await insights.overview_extras(self.db, gid, self.period_arg(request))
+        data["people"] = self.people(gid, data)
+        return web.json_response(data)
+
+    async def games(self, request: web.Request) -> web.Response:
+        gid = self.guild_arg(request)
+        data = await insights.games(self.db, gid, self.period_arg(request))
+        data["people"] = self.people(gid, data)
+        return web.json_response(data)
+
+    async def player_insights(self, request: web.Request) -> web.Response:
+        gid, uid = self.guild_arg(request), self.user_arg(request)
+        if not await queries.player_exists(self.db, gid, uid):
+            raise web.HTTPNotFound(text="no such player")
+        data = await insights.player_extras(self.db, gid, uid)
+        data["people"] = self.people(gid, data)
         return web.json_response(data)
 
     async def players(self, request: web.Request) -> web.Response:
@@ -361,6 +405,9 @@ class AdminPanel:
         r.add_get("/api/players", self.players)
         r.add_get("/api/players/{user_id}", self.player)
         r.add_get("/api/players/{user_id}/history", self.player_history)
+        r.add_get("/api/players/{user_id}/insights", self.player_insights)
+        r.add_get("/api/insights", self.insights)
+        r.add_get("/api/games", self.games)
         r.add_post("/api/players/{user_id}/balance", self.edit_balance)
         r.add_post("/api/players/{user_id}/crux", self.give_crux)
         r.add_post("/api/players/{user_id}/crux/remove", self.remove_crux)

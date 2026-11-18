@@ -24,19 +24,11 @@ const RANGES = [
   { value: "all", label: "All time", seconds: 0 },
 ] as const
 type Range = (typeof RANGES)[number]["value"]
-const RANGE_KEY = "jaxcasino-admin-balance-range"
 const Y_AXIS = 44          // px: the value axis on the left
 const RIGHT_MARGIN = 8     // px: room on the right of the line
 
-function storedRange(): Range {
-  try {
-    const v = localStorage.getItem(RANGE_KEY)
-    if (RANGES.some((r) => r.value === v)) return v as Range
-  } catch {
-    // storage blocked: the default is fine
-  }
-  return "all"
-}
+/** Every player's chart opens on the last 24 hours. */
+const DEFAULT_RANGE: Range = "24h"
 
 /** Time labels that suit how much time is on screen. */
 function tickLabel(ms: number, span: number) {
@@ -51,7 +43,7 @@ function tickLabel(ms: number, span: number) {
  * stretch (it loads that stretch in full detail), double-click or "Back" to return to the picked range.
  */
 export function BalanceChart({ guildId, playerId }: { guildId: string; playerId: string }) {
-  const [range, setRange] = React.useState<Range>(storedRange)
+  const [range, setRange] = React.useState<Range>(DEFAULT_RANGE)
   const [zoom, setZoom] = React.useState<{ from: number; to: number } | null>(null)
   const [drag, setDrag] = React.useState<{ a: number; b: number } | null>(null)
   // the chart's mouse events can come faster than renders: the ref always has the latest drag
@@ -85,11 +77,6 @@ export function BalanceChart({ guildId, playerId }: { guildId: string; playerId:
   const pick = (v: string) => {
     setRange(v as Range)
     setZoom(null)
-    try {
-      localStorage.setItem(RANGE_KEY, v)
-    } catch {
-      // storage blocked: the choice just isn't remembered
-    }
   }
 
   // the time under the pointer, from where it is over the plot area (left of it: the value axis, Y_AXIS wide;

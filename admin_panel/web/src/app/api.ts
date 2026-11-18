@@ -148,3 +148,79 @@ export type ActivityRow = {
 }
 
 export type ActivityPage = { rows: ActivityRow[]; people: Record<string, Person> }
+
+// ---------------------------------------------------------------- deeper stats (admin_panel/insights.py)
+
+export type People = Record<string, Person>
+
+/** One round of a game, for the record lists. */
+export type Round = { user_id: string; game: string; wagered: number; payout: number; ts: number }
+/** One player's games over a period, for the record lists. */
+export type PlayerTotal = { user_id: string; games: number; wagered: number; paid: number; net: number }
+
+export type HeatCell = { dow: number; hour: number; games: number; wagered: number; players?: number }
+
+export type Insights = {
+  since: number
+  /** a chart slot is an hour (24-hour period) or a day */
+  bucket: "hour" | "day"
+  timeline: {
+    t: number
+    games: number
+    wagered: number
+    paid: number
+    /** the house's result per game: wagered minus paid back */
+    by_game: Record<string, number>
+    players: number
+    new_players: number
+    restarts: number
+    restart_credits: number
+  }[]
+  broke: { user_id: string; n: number; credits: number; last: number }[]
+  heatmap: { since: number; cells: HeatCell[] }
+  flow: { start: number; end: number; steps: { kind: string; amount: number; n: number | null }[] }
+  bets: { lo: number; hi: number | null; rounds: number; wagered: number }[]
+  wealth: { t: number; top10?: number; top1?: number; gini?: number; accounts?: number; top_n?: number }[]
+  records: {
+    wins: Round[]
+    multipliers: Round[]
+    losses: Round[]
+    winners: PlayerTotal[]
+    losers: PlayerTotal[]
+    luckiest: PlayerTotal[]
+    unluckiest: PlayerTotal[]
+    min_games: number
+  }
+  people: People
+}
+
+export type GameStats = {
+  game: string
+  plays: number
+  players: number
+  wagered: number
+  paid: number
+  /** rounds that paid anything back / that paid more than the bet */
+  hits: number
+  wins: number
+  avg_multiplier: number | null
+  max_multiplier: number | null
+  /** what the game pays back by its rules and settings; approx when it depends on how it's played */
+  expected: { value: number; approx: boolean } | null
+  timeline: { t: number; plays: number; wagered: number; paid: number }[]
+  top_wins: Round[]
+  top_players: { user_id: string; plays: number; wagered: number; net: number }[]
+}
+
+export type GamesPage = { since: number; bucket: "hour" | "day"; games: GameStats[]; people: People }
+
+export type PlayerInsights = {
+  heatmap: HeatCell[]
+  daily: { day: string; games: number; wagered: number; net: number }[]
+  mix: { game: string; plays: number; wagered: number; paid: number; all_wagered: number; all_paid: number }[]
+  everyone: { wagered: number; paid: number }
+  broke: { n: number; credits: number; last: number | null; week: number }
+  payments: { user_id: string; sent: number; sent_n: number; received: number; received_n: number; last: number }[]
+  streaks: { game: string; best: number }[]
+  people: People
+}

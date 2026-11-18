@@ -1,5 +1,5 @@
 import * as React from "react"
-import { useQuery } from "@tanstack/react-query"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { ArrowClockwiseIcon } from "@phosphor-icons/react"
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts"
 
@@ -7,26 +7,21 @@ import { api, type Guild, type Overview, type Period, type Player } from "@/app/
 import { EditBalanceDialog, type EditTarget } from "@/app/edit-balance"
 import { ago, compact, credits, displayName, gameColor, gameName, moneyName, pct, signed } from "@/app/format"
 import { MoneyPie } from "@/app/money-pie"
+import { OverviewExtras } from "@/app/overview-extras"
+import { DEFAULT_PERIOD, PeriodToggle } from "@/app/stats-kit"
 import { PlayerAvatar } from "@/app/player-avatar"
 import { Button } from "@/components/ui/button"
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { ChartContainer, ChartTooltip, type ChartConfig } from "@/components/ui/chart"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { ColGroup, ResizeHandle, useColumnWidths } from "@/app/resizable-table"
 import { cn } from "@/lib/utils"
 
-const PERIODS: { value: Period; label: string }[] = [
-  { value: "24h", label: "24h" },
-  { value: "7d", label: "7 days" },
-  { value: "30d", label: "30 days" },
-  { value: "all", label: "All time" },
-]
-
 export function OverviewPage({ guild }: { guild: Guild }) {
-  const [period, setPeriod] = React.useState<Period>("30d")
+  const [period, setPeriod] = React.useState<Period>(DEFAULT_PERIOD)
   const [editing, setEditing] = React.useState<EditTarget | null>(null)
+  const qc = useQueryClient()
   const overview = useQuery({
     queryKey: ["overview", guild.id, period],
     queryFn: () => api.get<Overview>(`/api/overview?guild=${guild.id}&period=${period}`),
@@ -51,23 +46,7 @@ export function OverviewPage({ guild }: { guild: Guild }) {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <ToggleGroup
-              type="single"
-              variant="outline"
-              size="sm"
-              value={period}
-              onValueChange={(v) => v && setPeriod(v as Period)}
-            >
-              {PERIODS.map((p) => (
-                <ToggleGroupItem
-                  key={p.value}
-                  value={p.value}
-                  className="data-[state=on]:bg-primary data-[state=on]:text-primary-foreground px-2 sm:px-3"
-                >
-                  {p.label}
-                </ToggleGroupItem>
-              ))}
-            </ToggleGroup>
+            <PeriodToggle value={period} onChange={setPeriod} />
             <Button
               variant="outline"
               size="icon-sm"
@@ -75,6 +54,7 @@ export function OverviewPage({ guild }: { guild: Guild }) {
               onClick={() => {
                 overview.refetch()
                 players.refetch()
+                qc.invalidateQueries({ queryKey: ["insights", guild.id] })
               }}
             >
               <ArrowClockwiseIcon className={cn("size-4", (overview.isFetching || players.isFetching) && "animate-spin")} />
@@ -135,6 +115,8 @@ export function OverviewPage({ guild }: { guild: Guild }) {
             <CardContent>{o ? <DailyChart daily={o.daily} /> : <Skeleton className="h-[220px] w-full" />}</CardContent>
           </Card>
         </section>
+
+        <OverviewExtras guild={guild} period={period} />
 
         <section className="grid items-start gap-4 xl:grid-cols-[1.4fr_1fr] 3xl:grid-cols-[1.6fr_1fr_1fr]">
           <Card className="xl:row-span-2 3xl:row-span-1">

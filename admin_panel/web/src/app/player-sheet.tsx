@@ -4,7 +4,8 @@ import { PencilSimpleIcon } from "@phosphor-icons/react"
 
 import { api, ApiError, type Player, type PlayerDetail } from "@/app/api"
 import { BalanceChart } from "@/app/balance-chart"
-import { ago, compact, credits, duration, gameColor, gameName, moneyName, pct, signed } from "@/app/format"
+import { PlayerDaily, PlayerHeatmap, PlayerHistory, PlayerMix, usePlayerInsights } from "@/app/player-insights"
+import { ago, compact, credits, duration, moneyName, pct, signed } from "@/app/format"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -44,6 +45,7 @@ function PlayerSheetBody({ guildId, player, onEdit }: { guildId: string; player:
     queryFn: () => api.get<PlayerDetail>(`/api/players/${player.id}?guild=${guildId}`),
   })
   const d = detail.data
+  const extra = usePlayerInsights(guildId, player.id).data
 
   return (
     <div className="flex flex-col gap-5 p-4">
@@ -70,6 +72,7 @@ function PlayerSheetBody({ guildId, player, onEdit }: { guildId: string; player:
       </div>
 
       <BalanceChart guildId={guildId} playerId={player.id} />
+      <PlayerDaily d={extra} />
 
       <section className="grid grid-cols-3 gap-2">
         <Stat label="Games" value={credits(player.games)} />
@@ -87,28 +90,9 @@ function PlayerSheetBody({ guildId, player, onEdit }: { guildId: string; player:
         <Stat label="Avg bet" value={player.games ? compact(player.wagered / player.games) : "—"} />
       </section>
 
-      {d?.stats.per_game.length ? (
-        <section>
-          <h3 className="text-muted-foreground mb-2 text-xs">Per game</h3>
-          <ul className="flex flex-col gap-1.5">
-            {[...d.stats.per_game]
-              .sort((a, b) => b.wagered - a.wagered)
-              .map((g) => (
-                <li key={g.game} className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-3 text-xs">
-                  <span className="flex items-center gap-2">
-                    <span className="size-2 rounded-full" style={{ background: gameColor(g.game) }} />
-                    {gameName(g.game)}
-                  </span>
-                  <span className="text-muted-foreground tabular">{credits(g.plays)}×</span>
-                  <span className="tabular w-14 text-right">{compact(g.wagered)}</span>
-                  <span className={cn("tabular w-20 text-right", g.net > 0 ? "text-success" : g.net < 0 ? "text-error" : "")}>
-                    {signed(g.net)}
-                  </span>
-                </li>
-              ))}
-          </ul>
-        </section>
-      ) : null}
+      <PlayerMix d={extra} />
+      <PlayerHistory d={extra} />
+      <PlayerHeatmap d={extra} />
 
       {d && Object.keys(d.stats.money).length ? (
         <section>

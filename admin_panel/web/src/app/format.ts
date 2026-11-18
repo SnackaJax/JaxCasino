@@ -6,6 +6,8 @@ const compactFmt = new Intl.NumberFormat("en-US", { notation: "compact", maximum
 export const credits = (n: number) => whole.format(n)
 export const compact = (n: number) => compactFmt.format(n)
 export const signed = (n: number) => (n > 0 ? `+${credits(n)}` : n < 0 ? `−${credits(-n)}` : "0")
+/** +1.2M / −340K: a signed amount, short */
+export const signedCompact = (n: number) => (n > 0 ? `+${compact(n)}` : n < 0 ? `−${compact(-n)}` : "0")
 export const pct = (part: number, whole: number, digits = 1) =>
   whole ? `${((part / whole) * 100).toFixed(digits)}%` : "—"
 

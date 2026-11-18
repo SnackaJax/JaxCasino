@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   ChartPieSliceIcon,
   ClockCounterClockwiseIcon,
+  GameControllerIcon,
   PulseIcon,
   SignOutIcon,
   UsersThreeIcon,
@@ -12,6 +13,7 @@ import { api, type Guild, type Session } from "@/app/api"
 import { GuildPicker } from "@/app/guild-picker"
 import { ActivityPage } from "@/app/pages/activity"
 import { EditsPage } from "@/app/pages/edits"
+import { GamesPage } from "@/app/pages/games"
 import { OverviewPage } from "@/app/pages/overview"
 import { PlayersPage } from "@/app/pages/players"
 import { Button } from "@/components/ui/button"
@@ -20,6 +22,7 @@ import { cn } from "@/lib/utils"
 
 const PAGES = {
   overview: { label: "Overview", icon: ChartPieSliceIcon },
+  games: { label: "Games", icon: GameControllerIcon },
   players: { label: "Players", icon: UsersThreeIcon },
   activity: { label: "Activity", icon: PulseIcon },
   edits: { label: "Balance edits", icon: ClockCounterClockwiseIcon },
@@ -116,6 +119,8 @@ export function Shell({ session }: { session: Session }) {
           <Centered>No server has players yet.</Centered>
         ) : page === "overview" ? (
           <OverviewPage guild={guild} />
+        ) : page === "games" ? (
+          <GamesPage key={guild.id} guild={guild} />
         ) : page === "players" ? (
           <PlayersPage key={guild.id} guild={guild} />
         ) : page === "activity" ? (

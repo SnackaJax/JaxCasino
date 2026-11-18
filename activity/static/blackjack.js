@@ -1043,7 +1043,26 @@ $('rebetBtn').addEventListener('click', () => { unlock(); sfx.chips(3); send({ t
 $('x2Btn').addEventListener('click', () => { unlock(); sfx.chips(4); send({ type: 'double_bet' }); });
 $('dealBtn').addEventListener('click', () => { unlock(); sfx.click(); $('dealBtn').disabled = true; send({ type: 'ready' }); });
 $('sitBtn').addEventListener('click', () => { unlock(); sfx.click(); send({ type: 'sit' }); });
-$('leaveBtn').addEventListener('click', () => { unlock(); sfx.click(); send({ type: 'leave' }); });
+// with hands in play, Leave takes a second tap: the first one only arms it for a few seconds (a stray tap mid-round
+// used to make every hand stand and take the player off the table)
+let leaveArmed = null;
+function disarmLeave() {
+  clearTimeout(leaveArmed); leaveArmed = null;
+  $('leaveBtn').classList.remove('btn-leave');
+  $('leaveBtn').textContent = 'Leave table';
+}
+$('leaveBtn').addEventListener('click', () => {
+  unlock(); sfx.click();
+  const inPlay = T && T.phase !== 'betting' && T.seats.some((s) => s && s.id === myId && s.hands.length && !s.leaving);
+  if (inPlay && !leaveArmed) {
+    $('leaveBtn').classList.add('btn-leave');
+    $('leaveBtn').textContent = 'Tap again to leave';
+    leaveArmed = setTimeout(disarmLeave, 3000);
+    return;
+  }
+  disarmLeave();
+  send({ type: 'leave' });
+});
 // while bets are open the betting row takes the place of the one with "Leave table", so it has its own Leave
 $('betLeaveBtn').addEventListener('click', () => { unlock(); sfx.click(); send({ type: 'leave' }); });
 $('backBtn').addEventListener('click', () => { sfx.click(); send({ type: 'watch', table: null }); });

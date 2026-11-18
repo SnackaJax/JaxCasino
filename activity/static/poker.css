@@ -48,6 +48,7 @@ body.discord-mobile #app { padding-top: max(env(safe-area-inset-top), var(--disc
 .balance { display: flex; align-items: center; gap: 6px; background: var(--panel); border: 1px solid var(--line);
   padding: 4px 12px; border-radius: 99px; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .coin-dot { width: 14px; height: 14px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #fff3a6, #f2b705); }
+.icon-btn.off { opacity: .45; text-decoration: line-through; }
 .icon-btn { width: 32px; height: 32px; flex: none; border-radius: 50%; border: 1px solid var(--line); background: var(--panel);
   cursor: pointer; font-weight: 800; display: flex; align-items: center; justify-content: center; padding: 0; font-size: 14px; }
 .btn { border: 2px solid var(--line); background: var(--panel); border-radius: 10px; padding: 8px 16px; font-weight: 800; cursor: pointer; }

@@ -5,9 +5,11 @@
 //  - the device's own speech synthesis, with a female English voice when there is one: used when the server has
 //    no voice, or a line from the server doesn't arrive.
 // It can be switched off on its own (the 🗣 button), and the sound mute switch silences it too.
-import { decodeAudio, playBuffer } from './blackjack-sound.js';
+import { decodeAudio as bjDecode, playBuffer as bjPlay } from './blackjack-sound.js';
 
-const KEY = 'blackjack-voice';
+let KEY = 'blackjack-voice';
+// where the server's lines are decoded and played: the blackjack sound output unless configure() says otherwise
+let decodeAudio = bjDecode, playBuffer = bjPlay;
 const synth = typeof window !== 'undefined' && 'speechSynthesis' in window ? window.speechSynthesis : null;
 // voices that are female on the common systems: Windows (Zira, Aria, Jenny, Hazel, Susan, Libby, Sonia), Chrome
 // ("Google UK English Female", "Google US English"), Apple (Samantha, Karen, Moira, Tessa, Fiona, Victoria, Serena)
@@ -43,6 +45,15 @@ export function setVoiceOn(v) {
   if (!v) hush();
 }
 export function linkMute(fn) { isMuted = fn; }
+// Another game using this voice (the poker announcer): its own on/off setting, and its own sound output for the
+// server's lines ({ decodeAudio, playBuffer } like blackjack-sound.js). Call it before anything else.
+export function configure({ key, audio } = {}) {
+  if (key) {
+    KEY = key;
+    try { enabled = localStorage.getItem(KEY) !== '0'; } catch (e) { /* storage blocked */ }
+  }
+  if (audio) ({ decodeAudio, playBuffer } = audio);
+}
 
 // ------------------------------------------------------------------ the server's voice
 const lines = new Map();   // text -> Promise<AudioBuffer | null>, the last few lines (the fixed ones come back a lot)
@@ -63,9 +74,9 @@ function fetchLine(text) {
   return p;
 }
 // Turns the server's voice on (the server said it has one), and gets the lines every round needs ready.
-export function useServerVoice(session) {
+export function useServerVoice(session, warm = ['Place your bets, please.', 'No more bets, thank you.', 'Dealer busts!', 'Dealer has blackjack.']) {
   server = { session };
-  for (const t of ['Place your bets, please.', 'No more bets, thank you.', 'Dealer busts!', 'Dealer has blackjack.']) fetchLine(t);
+  for (const t of warm) fetchLine(t);
 }
 
 // A line in sentences, asked for one after another: the first one is back quickly and plays while the server
@@ -140,8 +151,9 @@ export function speakName(name) {
   const clean = String(name || '').replace(/[^\p{L}\p{N}' .-]/gu, ' ').replace(/\s+/g, ' ').trim();
   return clean.split(' ').slice(0, 3).join(' ') || 'player';
 }
-// amounts as words the voice reads well: 1,250 / 2.5 million
+// amounts as words the voice reads well: 1,250 / 2.5 million / 1.25 billion
 export function speakAmount(n) {
+  if (n >= 1e9) return `${+(n / 1e9).toFixed(n >= 1e10 ? 1 : 2)} billion`;
   if (n >= 1e6) return `${+(n / 1e6).toFixed(n >= 1e7 ? 1 : 2)} million`;
   return Math.round(n).toLocaleString('en-US');
 }

@@ -66,6 +66,36 @@ class Rejected(Exception):
     pass
 
 
+RANK_WORDS = {2: ("two", "twos"), 3: ("three", "threes"), 4: ("four", "fours"), 5: ("five", "fives"),
+              6: ("six", "sixes"), 7: ("seven", "sevens"), 8: ("eight", "eights"), 9: ("nine", "nines"),
+              10: ("ten", "tens"), 11: ("jack", "jacks"), 12: ("queen", "queens"), 13: ("king", "kings"),
+              14: ("ace", "aces")}
+
+
+def spoken_hand(score) -> str:
+    """A hand as the announcer says it: "a full house, kings over sevens", "two pair, aces and eights"."""
+    kind, ranks = score
+    one = lambda r: RANK_WORDS[r][0]
+    many = lambda r: RANK_WORDS[r][1]
+    if kind == 8:
+        return "a royal flush" if ranks[0] == 14 else f"a straight flush, {one(ranks[0])} high"
+    if kind == 7:
+        return f"four {many(ranks[0])}"
+    if kind == 6:
+        return f"a full house, {many(ranks[0])} over {many(ranks[1])}"
+    if kind == 5:
+        return f"a flush, {one(ranks[0])} high"
+    if kind == 4:
+        return f"a straight, {one(ranks[0])} high"
+    if kind == 3:
+        return f"three {many(ranks[0])}"
+    if kind == 2:
+        return f"two pair, {many(ranks[0])} and {many(ranks[1])}"
+    if kind == 1:
+        return f"a pair of {many(ranks[0])}"
+    return f"{one(ranks[0])} high"
+
+
 def buy_ins(settings) -> list[int]:
     """The buy-ins a table can be opened with on this bot (none under the minimum bet, and at least 20)."""
     low = max(20, settings.min_bet)
@@ -518,7 +548,8 @@ class Table:
                 got = share + (rem if w is winners[0] else 0)
                 w.stack += got
                 self.won[w.user_id] = self.won.get(w.user_id, 0) + got
-                payouts.append({"seat": self.index_of(w), "amount": got, "pot": i})
+                payouts.append({"seat": self.index_of(w), "amount": got, "pot": i, "split": len(winners) > 1,
+                                "uncalled": len(eligible) == 1, "hand": spoken_hand(best)})
             pot_name = "pot" if len(pots) == 1 else ("main pot" if i == 0 else f"side pot {i}")
             if len(eligible) == 1:
                 results.append(f"{winners[0].name} gets back {amount:,} (uncalled)")
@@ -782,7 +813,7 @@ class PokerHub:
         s = self.server.settings
         return {"type": "welcome", "you": str(user_id), "min_buy_in": max(20, s.min_bet), "buy_ins": buy_ins(s),
                 "turn_time": TURN_TIME,
-                "max_tables": MAX_TABLES, "rake": config.POKER_RAKE}
+                "max_tables": MAX_TABLES, "rake": config.POKER_RAKE, "server_voice": self.server.voice.available}
 
     async def websocket(self, request: web.Request) -> web.WebSocketResponse:
         ws = web.WebSocketResponse(heartbeat=20, max_msg_size=4096)

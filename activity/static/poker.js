@@ -1,8 +1,11 @@
 // Poker client for the Activity. The server (activity/poker.py) runs the tables; this page shows the room, the
 // table you're watching or sitting at, and animates what happens: cards dealt from the deck and turned over,
-// chips slid in and swept into the pot, the pot pushed to the winners. Sounds come from poker-sound.js.
+// chips slid in and swept into the pot, the pot pushed to the winners. Sounds come from poker-sound.js; an announcer
+// (the blackjack dealer's voice, dealer-voice.js) says who won, with what hand and how much.
 import { signIn, retryAfterExpiredSession, go } from './auth.js';
-import { sfx, unlock, isMuted, setMuted } from './poker-sound.js';
+import { sfx, unlock, isMuted, setMuted, decodeAudio, playBuffer } from './poker-sound.js';
+import { say, hush, voiceOn, setVoiceOn, voiceAvailable, linkMute, speakName, speakAmount, list, useServerVoice,
+  configure } from './dealer-voice.js';
 
 const $ = (id) => document.getElementById(id);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -35,6 +38,9 @@ let T = null;              // the table being shown (after its animations)
 let ws = null, session = null, joinInfo = null, fatal = false, retry = 0, offset = 0;
 let buyIn = 1000, seatsWanted = 6;
 const srv = () => Date.now() + offset;
+// the announcer: its own on/off switch (🗣), played through the poker sound output, quiet while the sound is muted
+configure({ key: 'poker-voice', audio: { decodeAudio, playBuffer } });
+linkMute(isMuted);
 
 // ------------------------------------------------------------------ connection
 
@@ -63,7 +69,7 @@ async function boot() {
   if (auth.error) { showFatal(auth.error); return; }
   session = auth.session; joinInfo = auth.joinInfo;
   // local dev server only: lets a test show any table state (used to check the layout at every window size)
-  if (auth.cfg && auth.cfg.dev) window.__poker = { show: (st) => enqueue(st) };
+  if (auth.cfg && auth.cfg.dev) window.__poker = { show: (st) => enqueue(st), winSpeech };
   connect();
 }
 function connect() {
@@ -83,7 +89,11 @@ setInterval(() => send({ type: 'ping' }), 25000);
 function onMessage(m) {
   if (m.now) offset = m.now - Date.now();
   switch (m.type) {
-    case 'welcome': W = m; myId = m.you; setupForm(); setupInfo(); $('loading').classList.add('hidden'); break;
+    case 'welcome':
+      W = m; myId = m.you; setupForm(); setupInfo(); $('loading').classList.add('hidden');
+      if (m.server_voice) useServerVoice(session, []);
+      updateVoiceBtn();
+      break;
     case 'me': balance = m.balance; showBalance(); renderForm(); break;
     case 'room': room = m; renderRoom(); break;
     case 'table': enqueue(m); break;
@@ -115,8 +125,19 @@ function toast(text, good = false) {
   clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.add('hidden'), 3200);
 }
 function updateMuteBtn() { $('muteBtn').textContent = isMuted() ? '🔇' : '🔊'; }
-$('muteBtn').addEventListener('click', () => { unlock(); setMuted(!isMuted()); updateMuteBtn(); });
+$('muteBtn').addEventListener('click', () => { unlock(); setMuted(!isMuted()); updateMuteBtn(); if (isMuted()) hush(); });
 updateMuteBtn();
+function updateVoiceBtn() {
+  const b = $('voiceBtn');
+  b.classList.toggle('hidden', !voiceAvailable());
+  b.classList.toggle('off', !voiceOn());
+  b.title = voiceOn() ? "Announcer's voice: on" : "Announcer's voice: off";
+}
+$('voiceBtn').addEventListener('click', () => {
+  unlock(); setVoiceOn(!voiceOn()); updateVoiceBtn();
+  if (voiceOn()) say('The announcer is on.', { urgent: true });
+});
+updateVoiceBtn();
 document.addEventListener('pointerdown', () => unlock(), { once: true });
 $('gamesBtn').addEventListener('click', () => {
   if (T && T.you >= 0) { toast('Leave the table first (your chips go back to your balance).'); return; }
@@ -254,7 +275,8 @@ function setupInfo() {
       <li>Anyone in the server can watch a table. The table's host deals the first hand once two players sit.</li>
     </ul>
     ${W.rake ? `<p>The house takes ${(W.rake * 100).toFixed(1)}% of every contested pot.</p>` : ''}
-    <p>If the bot restarts during a hand, everyone gets back the chips they had when that hand started.</p>`;
+    <p>If the bot restarts during a hand, everyone gets back the chips they had when that hand started.</p>
+    <p>The 🗣 button switches the announcer (who won, with what hand and how much) on or off.</p>`;
 }
 
 // ================================================================== the table
@@ -856,8 +878,31 @@ async function animShowdown(prev, st) {
   st.seats.forEach((s, i) => { if (seatEls[i]) seatEls[i].hand.forEach((c) => c.classList.remove('lift')); });
 }
 
+// What the announcer says when a pot is won: "Tester 4 wins 250 million with a full house, kings over sevens."
+// Everyone else folded: no hand is named. One pot split: both names, the hand and the share. Side pots: each winner
+// with everything they won. Chips that only come back because nobody called them aren't announced.
+export function winSpeech(st, ev) {
+  const name = (i) => speakName(st.seats[i] ? st.seats[i].name : '');
+  const pays = (ev.payouts || []).filter((p) => !p.uncalled && p.amount > 0 && st.seats[p.seat]);
+  if (!pays.length) return '';
+  if (ev.uncontested) return `${name(pays[0].seat)} wins ${speakAmount(pays[0].amount)}. Everyone else folded.`;
+  if (new Set(pays.map((p) => p.pot)).size === 1 && pays.length > 1) {
+    const each = Math.min(...pays.map((p) => p.amount));
+    return `${list(pays.map((p) => name(p.seat)))} split the pot with ${pays[0].hand}, ${speakAmount(each)} each.`;
+  }
+  const bySeat = new Map();
+  for (const p of pays) {
+    const w = bySeat.get(p.seat) || { amount: 0, hand: p.hand, split: false };
+    w.amount += p.amount; w.split = w.split || p.split;
+    bySeat.set(p.seat, w);
+  }
+  return [...bySeat].map(([i, w]) => `${name(i)} wins ${speakAmount(w.amount)}${w.hand ? ` with ${w.hand}` : ''}`
+    + `${w.split ? ', sharing a pot' : ''}.`).join(' ');
+}
+
 // the pot goes to the winner(s): a stack of chips slides to each, with "+amount" floating up
 async function animWin(prev, st, ev) {
+  say(winSpeech(st, ev));
   if (prev && prev.seats.some((s) => s.bet)) await animCollect(prev);
   renderStatic(st, { potOverride: prev ? prev.pot : 0 });
   const [cx, cy] = centerOf($('pot'));

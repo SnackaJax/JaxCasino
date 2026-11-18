@@ -28,6 +28,27 @@ export function setMuted(v) {
   if (master) master.gain.setTargetAtTime(v ? 0 : VOLUME, ctx.currentTime, 0.02);
 }
 const ready = () => !muted && ctx && ctx.state === 'running';
+// the announcer's lines from the server (dealer-voice.js), played through this output so the mute switch covers them
+export function decodeAudio(arrayBuffer) {
+  const c = audio();
+  if (!c) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    try {
+      const p = c.decodeAudioData(arrayBuffer, resolve, () => resolve(null));
+      if (p && p.catch) p.catch(() => resolve(null));
+    } catch (e) { resolve(null); }
+  });
+}
+export function playBuffer(buffer, volume = 1.4) {
+  if (!ready() || !buffer) return { done: Promise.resolve(), stop() {} };
+  const src = ctx.createBufferSource();
+  const g = ctx.createGain();
+  src.buffer = buffer; g.gain.value = volume;
+  src.connect(g); g.connect(master);
+  const done = new Promise((r) => { src.onended = r; });
+  src.start();
+  return { done, stop() { try { src.stop(); } catch (e) { /* already stopped */ } } };
+}
 
 function tone({ f = 440, f2 = null, at = 0, dur = 0.12, type = 'sine', vol = 0.3, attack = 0.004 }) {
   if (!ready()) return;

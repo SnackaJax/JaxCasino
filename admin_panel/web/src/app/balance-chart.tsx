@@ -3,6 +3,7 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query"
 import { Area, AreaChart, CartesianGrid, ReferenceArea, XAxis, YAxis } from "recharts"
 
 import { api, type BalanceWindow } from "@/app/api"
+import { useDragZoom } from "@/app/drag-zoom"
 import { compact, credits } from "@/app/format"
 import { Button } from "@/components/ui/button"
 import { ChartContainer, ChartTooltip, type ChartConfig } from "@/components/ui/chart"
@@ -45,13 +46,6 @@ function tickLabel(ms: number, span: number) {
 export function BalanceChart({ guildId, playerId }: { guildId: string; playerId: string }) {
   const [range, setRange] = React.useState<Range>(DEFAULT_RANGE)
   const [zoom, setZoom] = React.useState<{ from: number; to: number } | null>(null)
-  const [drag, setDrag] = React.useState<{ a: number; b: number } | null>(null)
-  // the chart's mouse events can come faster than renders: the ref always has the latest drag
-  const dragRef = React.useRef<{ a: number; b: number } | null>(null)
-  const updateDrag = (d: { a: number; b: number } | null) => {
-    dragRef.current = d
-    setDrag(d)
-  }
   // "now" moves on with every refetch of a preset range, so the window is worked out per query
   const preset = RANGES.find((r) => r.value === range)!
 
@@ -79,25 +73,14 @@ export function BalanceChart({ guildId, playerId }: { guildId: string; playerId:
     setZoom(null)
   }
 
-  // the time under the pointer, from where it is over the plot area (left of it: the value axis, Y_AXIS wide;
-  // right of it: the chart's right margin)
-  const plotRef = React.useRef<HTMLDivElement>(null)
-  const timeAt = (clientX: number) => {
-    const box = plotRef.current?.getBoundingClientRect()
-    if (!box || data.length < 2) return null
-    const left = box.left + Y_AXIS, right = box.right - RIGHT_MARGIN
-    const f = Math.min(1, Math.max(0, (clientX - left) / (right - left)))
-    const t0 = data[0].ts, t1 = data[data.length - 1].ts
-    return t0 + f * (t1 - t0)
-  }
-
-  const finishDrag = () => {
-    const d = dragRef.current
-    if (d && Math.abs(d.b - d.a) > 1000) {
-      setZoom({ from: Math.min(d.a, d.b) / 1000, to: Math.max(d.a, d.b) / 1000 })
-    }
-    updateDrag(null)
-  }
+  const { ref: plotRef, drag, dragging, handlers } = useDragZoom({
+    start: data[0]?.ts ?? 0,
+    end: data[data.length - 1]?.ts ?? 0,
+    left: Y_AXIS,
+    right: RIGHT_MARGIN,
+    onZoom: (from, to) => setZoom({ from: from / 1000, to: to / 1000 }),
+    onReset: () => setZoom(null),
+  })
 
   return (
     <section>
@@ -126,24 +109,8 @@ export function BalanceChart({ guildId, playerId }: { guildId: string; playerId:
       {history.isLoading ? (
         <Skeleton className="h-44 w-full" />
       ) : data.length > 1 ? (
-        <div onDoubleClick={() => setZoom(null)} className="select-none">
-          <div
-            ref={plotRef}
-            className="touch-none"
-            onPointerDown={(e) => {
-              if (e.button !== 0) return
-              const x = timeAt(e.clientX)
-              if (x === null) return
-              e.currentTarget.setPointerCapture(e.pointerId)
-              updateDrag({ a: x, b: x })
-            }}
-            onPointerMove={(e) => {
-              const x = timeAt(e.clientX)
-              if (dragRef.current && x !== null) updateDrag({ ...dragRef.current, b: x })
-            }}
-            onPointerUp={finishDrag}
-            onPointerCancel={() => updateDrag(null)}
-          >
+        <div className="select-none">
+          <div ref={plotRef} className="touch-none" {...handlers}>
           <ChartContainer config={config} className="aspect-auto h-44 w-full cursor-crosshair">
             <AreaChart
               data={data}
@@ -171,7 +138,7 @@ export function BalanceChart({ guildId, playerId }: { guildId: string; playerId:
               <ChartTooltip
                 content={({ payload }) => {
                   const p = payload?.[0]?.payload as { ts: number; balance: number } | undefined
-                  if (!p || drag) return null
+                  if (!p || dragging) return null
                   return (
                     <div className="bg-popover rounded-md border px-2 py-1.5 text-xs shadow-md">
                       <div className="text-muted-foreground">{new Date(p.ts).toLocaleString()}</div>
@@ -188,7 +155,7 @@ export function BalanceChart({ guildId, playerId }: { guildId: string; playerId:
                 fill="url(#fillBalance)"
                 isAnimationActive={false}
               />
-              {drag && drag.a !== drag.b ? (
+              {drag ? (
                 <ReferenceArea x1={drag.a} x2={drag.b} fill="var(--color-balance)" fillOpacity={0.15} strokeOpacity={0} />
               ) : null}
             </AreaChart>

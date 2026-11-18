@@ -1,9 +1,10 @@
 import * as React from "react"
-import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query"
 import { ArrowClockwiseIcon } from "@phosphor-icons/react"
-import { Area, AreaChart, Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts"
+import { Area, AreaChart, Bar, BarChart, CartesianGrid, ReferenceArea, XAxis, YAxis } from "recharts"
 
-import { api, type Guild, type Overview, type Period, type Player } from "@/app/api"
+import { api, type BalanceWindow, type Guild, type Overview, type Period, type Player } from "@/app/api"
+import { useDragZoom } from "@/app/drag-zoom"
 import { EditBalanceDialog, type EditTarget } from "@/app/edit-balance"
 import { ago, compact, credits, displayName, gameColor, gameName, moneyName, pct, signed } from "@/app/format"
 import { MoneyPie } from "@/app/money-pie"
@@ -86,7 +87,21 @@ export function OverviewPage({ guild }: { guild: Guild }) {
           />
         </section>
 
-        <section className="grid gap-4 xl:grid-cols-[1.15fr_1fr] 3xl:grid-cols-[1.1fr_1fr_1fr]">
+        <Card>
+          <CardHeader>
+            <CardTitle>Credits in circulation</CardTitle>
+            <CardDescription>Everything players hold, over the period. Drag across the chart to zoom in.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {o ? (
+              <CirculationChart key={period} guildId={guild.id} points={o.circulation} />
+            ) : (
+              <Skeleton className="h-[320px] w-full" />
+            )}
+          </CardContent>
+        </Card>
+
+        <section className="grid gap-4 xl:grid-cols-[1.15fr_1fr]">
           <Card>
             <CardHeader>
               <CardTitle>Money distribution</CardTitle>
@@ -101,13 +116,6 @@ export function OverviewPage({ guild }: { guild: Guild }) {
             </CardContent>
           </Card>
           <Card>
-            <CardHeader>
-              <CardTitle>Credits in circulation</CardTitle>
-              <CardDescription>Everything players hold, over the period.</CardDescription>
-            </CardHeader>
-            <CardContent>{o ? <CirculationChart points={o.circulation} /> : <Skeleton className="h-[280px] w-full" />}</CardContent>
-          </Card>
-          <Card className="xl:col-span-2 3xl:col-span-1">
             <CardHeader>
               <CardTitle>Games per day</CardTitle>
               <CardDescription>Won, lost and even games, with the credits wagered each day.</CardDescription>
@@ -208,42 +216,87 @@ function Kpi({
 }
 
 const circulationConfig = { total: { label: "Credits held", color: "var(--chart-1)" } } satisfies ChartConfig
+const CIRC_Y_AXIS = 48       // px: the value axis on the left
+const CIRC_RIGHT = 8         // px: room on the right of the line
 
-function CirculationChart({ points }: { points: [number, number][] }) {
-  const data = React.useMemo(() => points.map(([ts, total]) => ({ ts: ts * 1000, total })), [points])
+/**
+ * Everything players hold over the period. Drag across it to zoom into a stretch (loaded again in full detail),
+ * double-click or "Back" to return to the whole period. Picking another period starts over (the page keys it).
+ */
+function CirculationChart({ guildId, points }: { guildId: string; points: [number, number][] }) {
+  const [zoom, setZoom] = React.useState<{ from: number; to: number } | null>(null)
+  const zoomed = useQuery({
+    queryKey: ["circulation", guildId, zoom?.from, zoom?.to],
+    queryFn: () =>
+      api.get<BalanceWindow>(`/api/circulation?guild=${guildId}&from=${zoom!.from.toFixed(3)}&to=${zoom!.to.toFixed(3)}`),
+    enabled: !!zoom,
+    placeholderData: keepPreviousData,
+  })
+  const shown = zoom ? zoomed.data?.points ?? [] : points
+  const data = React.useMemo(() => shown.map(([ts, total]) => ({ ts: ts * 1000, total })), [shown])
+  const { ref, drag, dragging, handlers } = useDragZoom({
+    start: data[0]?.ts ?? 0,
+    end: data[data.length - 1]?.ts ?? 0,
+    left: CIRC_Y_AXIS,
+    right: CIRC_RIGHT,
+    onZoom: (from, to) => setZoom({ from: from / 1000, to: to / 1000 }),
+    onReset: () => setZoom(null),
+  })
+
+  if (zoom && zoomed.isLoading) return <Skeleton className="h-[320px] w-full" />
   if (data.length < 2) {
     return <p className="text-muted-foreground py-16 text-center text-sm">Not enough history yet.</p>
   }
   const span = data[data.length - 1].ts - data[0].ts
   const tick = (ts: number) =>
-    new Date(ts).toLocaleString(undefined, span < 2 * 86400_000 ? { hour: "2-digit", minute: "2-digit" } : { month: "short", day: "numeric" })
+    new Date(ts).toLocaleString(
+      undefined,
+      span < 2 * 86400_000 ? { hour: "2-digit", minute: "2-digit" } : { month: "short", day: "numeric" }
+    )
   return (
-    <ChartContainer config={circulationConfig} className="aspect-auto h-[280px] w-full">
-      <AreaChart data={data} margin={{ left: 0, right: 8, top: 8 }}>
-        <defs>
-          <linearGradient id="fillTotal" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="var(--color-total)" stopOpacity={0.35} />
-            <stop offset="100%" stopColor="var(--color-total)" stopOpacity={0.02} />
-          </linearGradient>
-        </defs>
-        <CartesianGrid vertical={false} strokeDasharray="3 3" />
-        <XAxis dataKey="ts" type="number" scale="time" domain={["dataMin", "dataMax"]} tickFormatter={tick} tickLine={false} axisLine={false} minTickGap={40} fontSize={11} />
-        <YAxis tickFormatter={(v) => compact(v)} tickLine={false} axisLine={false} width={48} fontSize={11} />
-        <ChartTooltip
-          content={({ payload }) => {
-            const p = payload?.[0]?.payload as { ts: number; total: number } | undefined
-            if (!p) return null
-            return (
-              <div className="bg-popover rounded-md border px-3 py-2 text-xs shadow-md">
-                <div className="text-muted-foreground">{new Date(p.ts).toLocaleString()}</div>
-                <div className="tabular font-medium">{credits(p.total)} credits</div>
-              </div>
-            )
-          }}
-        />
-        <Area dataKey="total" type="stepAfter" stroke="var(--color-total)" strokeWidth={1.5} fill="url(#fillTotal)" isAnimationActive={false} />
-      </AreaChart>
-    </ChartContainer>
+    <div className="select-none">
+      <div ref={ref} className="touch-none" {...handlers}>
+        <ChartContainer config={circulationConfig} className="aspect-auto h-[320px] w-full cursor-crosshair">
+          <AreaChart data={data} margin={{ left: 0, right: CIRC_RIGHT, top: 8 }}>
+            <defs>
+              <linearGradient id="fillTotal" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="var(--color-total)" stopOpacity={0.35} />
+                <stop offset="100%" stopColor="var(--color-total)" stopOpacity={0.02} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid vertical={false} strokeDasharray="3 3" />
+            <XAxis dataKey="ts" type="number" scale="time" domain={["dataMin", "dataMax"]} tickFormatter={tick} tickLine={false} axisLine={false} minTickGap={40} fontSize={11} />
+            <YAxis tickFormatter={(v) => compact(v)} tickLine={false} axisLine={false} width={CIRC_Y_AXIS} fontSize={11} domain={["auto", "auto"]} />
+            <ChartTooltip
+              content={({ payload }) => {
+                const p = payload?.[0]?.payload as { ts: number; total: number } | undefined
+                if (!p || dragging) return null
+                return (
+                  <div className="bg-popover rounded-md border px-3 py-2 text-xs shadow-md">
+                    <div className="text-muted-foreground">{new Date(p.ts).toLocaleString()}</div>
+                    <div className="tabular font-medium">{credits(p.total)} credits</div>
+                  </div>
+                )
+              }}
+            />
+            <Area dataKey="total" type="stepAfter" stroke="var(--color-total)" strokeWidth={1.5} fill="url(#fillTotal)" isAnimationActive={false} />
+            {drag ? <ReferenceArea x1={drag.a} x2={drag.b} fill="var(--color-total)" fillOpacity={0.15} strokeOpacity={0} /> : null}
+          </AreaChart>
+        </ChartContainer>
+      </div>
+      <div className="text-muted-foreground mt-1 flex min-h-6 items-center justify-between gap-2 text-[11px]">
+        <span>
+          {zoom
+            ? `${new Date(zoom.from * 1000).toLocaleString()} – ${new Date(zoom.to * 1000).toLocaleString()} · double-click to go back`
+            : "Drag across the chart to zoom in."}
+        </span>
+        {zoom ? (
+          <Button variant="ghost" size="xs" onClick={() => setZoom(null)}>
+            ← Back
+          </Button>
+        ) : null}
+      </div>
+    </div>
   )
 }
 

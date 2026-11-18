@@ -811,11 +811,12 @@ class Database:
                ORDER BY ts, id""", (guild_id, user_id, since))
         return (before["balance"] if before else None), await cur.fetchall()
 
-    async def circulation_history(self, guild_id: int, since: float = 0, buckets: int = 400) -> list:
+    async def circulation_history(self, guild_id: int, since: float = 0, buckets: int = 400,
+                                  until: float | None = None) -> list:
         """Total credits held by all players over time, as (ts, total) points, oldest first. Built from
         balance_log; players who have no logged balance at all (untouched since before it existed) are counted
         at their current balance the whole time. Thinned to about `buckets` time slots, keeping each slot's
-        lowest and highest total so peaks and dips survive."""
+        lowest and highest total so peaks and dips survive. With `until`, it stops there, and the line runs on to it."""
         q = self.conn.execute
         cur = await q("""SELECT user_id, balance FROM (
                              SELECT user_id, balance,
@@ -826,8 +827,8 @@ class Database:
                              (SELECT 1 FROM balance_log b WHERE b.guild_id=u.guild_id AND b.user_id=u.user_id)""",
                       (guild_id,))
         unlogged = (await cur.fetchone())["t"]
-        cur = await q("SELECT ts, user_id, balance FROM balance_log WHERE guild_id=? AND ts >= ? ORDER BY ts, id",
-                      (guild_id, since))
+        cur = await q("SELECT ts, user_id, balance FROM balance_log WHERE guild_id=? AND ts >= ? AND ts < ? "
+                      "ORDER BY ts, id", (guild_id, since, until if until is not None else float("inf")))
         rows = await cur.fetchall()
         total = sum(held.values()) + unlogged
         raw = [(since, total)] if since and held else []
@@ -835,6 +836,8 @@ class Database:
             total += r["balance"] - held.get(r["user_id"], 0)
             held[r["user_id"]] = r["balance"]
             raw.append((r["ts"], total))
+        if until is not None and raw:
+            raw.append((until, total))
         if len(raw) <= buckets * 2:
             return raw
         t0, t1 = raw[0][0], raw[-1][0]

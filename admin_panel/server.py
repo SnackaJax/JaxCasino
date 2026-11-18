@@ -15,6 +15,7 @@ Routes
   GET  /api/auth/discord/start       sends you to Discord to sign in; Discord sends you back to /api/auth/discord
   GET  /api/guilds                   servers with players
   GET  /api/overview?guild=&period=  stats for the dashboard (period: 24h, 7d, 30d, all)
+  GET  /api/circulation?guild=&from=&to=   credits held by all players over that time (unix times), in detail
   GET  /api/insights?guild=&period=  the overview's extra charts: house result, players, going broke, heatmap,
                                      where credits came from, bet sizes, wealth spread and records
   GET  /api/games?guild=&period=     every game's numbers, payback over time against its expected payback
@@ -348,10 +349,8 @@ class AdminPanel:
         data["player"] = {"id": str(uid), **self.who(gid, uid)}
         return web.json_response(data)
 
-    async def player_history(self, request: web.Request) -> web.Response:
-        gid, uid = self.guild_arg(request), self.user_arg(request)
-        if not await queries.player_exists(self.db, gid, uid):
-            raise web.HTTPNotFound(text="no such player")
+    def window_arg(self, request: web.Request) -> tuple[float, float]:
+        """?from=&to= as unix times, clipped to now (from missing or 0 = from the start)."""
         now = time.time()
         try:
             start = max(0.0, float(request.query.get("from") or 0))
@@ -360,6 +359,20 @@ class AdminPanel:
             raise web.HTTPBadRequest(text="from and to are unix times")
         if end <= start:
             raise web.HTTPBadRequest(text="to must be after from")
+        return start, end
+
+    async def circulation(self, request: web.Request) -> web.Response:
+        """The overview's "credits in circulation" line for a stretch you zoomed into."""
+        gid = self.guild_arg(request)
+        start, end = self.window_arg(request)
+        points = await self.db.circulation_history(gid, start, buckets=400, until=end)
+        return web.json_response({"from": start, "to": end, "points": [[ts, total] for ts, total in points]})
+
+    async def player_history(self, request: web.Request) -> web.Response:
+        gid, uid = self.guild_arg(request), self.user_arg(request)
+        if not await queries.player_exists(self.db, gid, uid):
+            raise web.HTTPNotFound(text="no such player")
+        start, end = self.window_arg(request)
         points = await queries.balance_window(self.db, gid, uid, start, end)
         return web.json_response({"from": start, "to": end, "points": points})
 
@@ -493,6 +506,7 @@ class AdminPanel:
         r.add_get(DISCORD_CALLBACK, self.discord_callback)
         r.add_get("/api/guilds", self.guilds)
         r.add_get("/api/overview", self.overview)
+        r.add_get("/api/circulation", self.circulation)
         r.add_get("/api/players", self.players)
         r.add_get("/api/players/{user_id}", self.player)
         r.add_get("/api/players/{user_id}/history", self.player_history)

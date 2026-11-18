@@ -17,6 +17,7 @@ Routes
   GET  /api/players/{id}?guild=      one player's stats, games and admin edits
   GET  /api/players/{id}/history?guild=&from=&to=   their balance over that time (unix times)
   POST /api/players/{id}/balance     {guild, action: set|add|remove, amount, note?}; nothing is posted in Discord
+  POST /api/players/{id}/crux        {guild, duration}: puts the player on a crux (like /crux), e.g. "3d" or "1d12h"
   POST /api/players/{id}/crux/remove {guild}: ends the player's /crux (break from the casino) early
   GET  /api/edits?guild=             the latest balance edits made in the panel
   GET  /api/activity?guild=&before=&after=   games and other credit movements, newest first
@@ -37,6 +38,7 @@ from aiohttp import web
 
 from admin_panel import queries
 from database import Database
+from utils.crux import MAX_SECONDS, MIN_SECONDS, describe, parse_duration
 
 log = logging.getLogger("jaxcasino.adminpanel")
 
@@ -54,6 +56,7 @@ class Directory(Protocol):
     """Who's who: names and avatars come from Discord, the database only knows IDs."""
     def guilds(self) -> dict[int, dict]: ...                           # id -> {name, icon}
     def member(self, guild_id: int, user_id: int) -> dict | None: ...  # {name, avatar, in_server}
+    async def crux_started(self, guild_id: int, user_id: int, until: float) -> None: ...  # closes their games
 
 
 
@@ -227,6 +230,35 @@ class AdminPanel:
         points = await queries.balance_window(self.db, gid, uid, start, end)
         return web.json_response({"from": start, "to": end, "points": points})
 
+    async def give_crux(self, request: web.Request) -> web.Response:
+        """Puts a player on a crux from the panel, the same break /crux gives. {guild, duration}. A running crux
+        gets the new end time, longer or shorter."""
+        uid = self.user_arg(request)
+        try:
+            body = await request.json()
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            raise web.HTTPBadRequest(text="bad JSON")
+        if not isinstance(body, dict):
+            raise web.HTTPBadRequest(text="bad request")
+        gid = str(body.get("guild", ""))
+        if not gid.isdigit():
+            raise web.HTTPBadRequest(text="guild is missing")
+        seconds = parse_duration(str(body.get("duration", "")))
+        if seconds is None:
+            return web.json_response({"error": "Can't read that duration. Try 2h, 3d, 1w or 1d12h."}, status=400)
+        if not MIN_SECONDS <= seconds <= MAX_SECONDS:
+            return web.json_response({"error": "A crux lasts from 10 minutes up to a year."}, status=400)
+        if not await queries.player_exists(self.db, int(gid), uid):
+            raise web.HTTPNotFound(text="no such player")
+        until = time.time() + seconds
+        await self.db.set_crux(int(gid), uid, until)
+        log.info("Admin panel: crux for %s in %s, %s", uid, gid, describe(seconds))
+        try:
+            await self.directory.crux_started(int(gid), uid, until)
+        except Exception:
+            log.exception("Couldn't close %s's casino games for their crux", uid)
+        return web.json_response({"ok": True, "until": until})
+
     async def remove_crux(self, request: web.Request) -> web.Response:
         """Ends a player's /crux early (only an admin can). {guild}"""
         uid = self.user_arg(request)
@@ -330,6 +362,7 @@ class AdminPanel:
         r.add_get("/api/players/{user_id}", self.player)
         r.add_get("/api/players/{user_id}/history", self.player_history)
         r.add_post("/api/players/{user_id}/balance", self.edit_balance)
+        r.add_post("/api/players/{user_id}/crux", self.give_crux)
         r.add_post("/api/players/{user_id}/crux/remove", self.remove_crux)
         r.add_get("/api/edits", self.edits)
         r.add_get("/api/activity", self.activity)

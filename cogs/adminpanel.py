@@ -31,6 +31,11 @@ class BotDirectory:
                     "avatar": user.display_avatar.with_size(64).with_static_format("png").url, "in_server": False}
         return None
 
+    async def crux_started(self, guild_id: int, user_id: int, until: float) -> None:
+        """A crux given in the panel: their open casino games close and show the crux screen."""
+        from cogs.crux import kick_from_activity
+        await kick_from_activity(self.bot, guild_id, user_id, until)
+
 
 class AdminPanelCog(commands.Cog):
     def __init__(self, bot: commands.Bot):

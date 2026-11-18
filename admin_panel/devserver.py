@@ -38,6 +38,9 @@ class FakeDirectory:
             return {"name": NAMES[i], "username": NAMES[i].lower(), "avatar": None, "in_server": i % 9 != 8}
         return None
 
+    async def crux_started(self, guild_id: int, user_id: int, until: float) -> None:
+        pass   # no casino here to close games in
+
 
 def play(r: random.Random, game: str, bet: int) -> int:
     """A made-up payout with roughly the game's return."""

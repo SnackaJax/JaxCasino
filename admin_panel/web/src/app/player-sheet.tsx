@@ -7,6 +7,7 @@ import { BalanceChart } from "@/app/balance-chart"
 import { ago, compact, credits, duration, gameColor, gameName, moneyName, pct, signed } from "@/app/format"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
 
@@ -57,9 +58,7 @@ function PlayerSheetBody({ guildId, player, onEdit }: { guildId: string; player:
         </Button>
       </div>
 
-      {player.crux_until && player.crux_until > Date.now() / 1000 ? (
-        <CruxBanner guildId={guildId} player={player} />
-      ) : null}
+      <CruxBanner guildId={guildId} player={player} />
 
       <div className="flex flex-wrap gap-1.5">
         {player.username ? <Badge variant="outline">@{player.username}</Badge> : null}
@@ -163,29 +162,108 @@ function Stat({ label, value, tone, title }: { label: string; value: string; ton
   )
 }
 
-/** The player is on a /crux break: when it ends, and the one way to end it early (besides /admin uncrux). */
+const CRUX_PRESETS = ["1h", "12h", "1d", "3d", "1w", "30d"]
+
+/** The player's /crux (a break from the casino): give one, change its length, or end it early (also /admin uncrux). */
 function CruxBanner({ guildId, player }: { guildId: string; player: Player }) {
   const qc = useQueryClient()
   const until = player.crux_until ?? 0
+  const active = until > Date.now() / 1000
+  const [open, setOpen] = React.useState(false)
+  const [length, setLength] = React.useState("1d")
+  const refresh = () => qc.invalidateQueries({ queryKey: ["players"] })
   const end = useMutation({
     mutationFn: () => api.post(`/api/players/${player.id}/crux/remove`, { guild: guildId }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["players"] }),
+    onSuccess: refresh,
   })
-  return (
-    <div className="border-info/40 bg-info/10 flex items-center justify-between gap-3 rounded-md border px-3 py-2.5">
-      <div className="min-w-0 text-xs">
-        <div className="font-medium">🧊 On a crux: {duration(until - Date.now() / 1000)} left</div>
-        <div className="text-muted-foreground">
-          Until {new Date(until * 1000).toLocaleString()}
-          {player.crux_started ? ` · started ${ago(player.crux_started)}` : ""}. No games or commands for them until then.
-        </div>
-        {end.isError ? (
-          <div className="text-destructive mt-1">{end.error instanceof ApiError ? end.error.message : String(end.error)}</div>
-        ) : null}
+  const give = useMutation({
+    mutationFn: (duration: string) => api.post(`/api/players/${player.id}/crux`, { guild: guildId, duration }),
+    onSuccess: () => {
+      setOpen(false)
+      return refresh()
+    },
+  })
+  const failed = end.error ?? give.error
+  const error = failed ? (
+    <div className="text-destructive mt-1 text-xs">{failed instanceof ApiError ? failed.message : String(failed)}</div>
+  ) : null
+
+  const form = open ? (
+    <form
+      className="flex flex-col gap-2 border-t pt-2.5"
+      onSubmit={(e) => {
+        e.preventDefault()
+        give.mutate(length)
+      }}
+    >
+      <div className="flex flex-wrap gap-1">
+        {CRUX_PRESETS.map((p) => (
+          <Button key={p} type="button" size="xs" variant={length === p ? "default" : "outline"} onClick={() => setLength(p)}>
+            {p}
+          </Button>
+        ))}
       </div>
-      <Button size="sm" variant="outline" disabled={end.isPending} onClick={() => end.mutate()}>
-        {end.isPending ? "Ending…" : "Remove crux"}
-      </Button>
+      <div className="flex items-center gap-2">
+        <Input
+          value={length}
+          onChange={(e) => setLength(e.target.value)}
+          placeholder="e.g. 2h, 3d, 1w or 1d12h"
+          aria-label="Crux length"
+          className="w-40"
+        />
+        <Button type="submit" size="sm" disabled={give.isPending || !length.trim()}>
+          {give.isPending ? "Saving…" : active ? "Set new length" : "Give crux"}
+        </Button>
+        <Button type="button" size="sm" variant="ghost" onClick={() => setOpen(false)}>
+          Cancel
+        </Button>
+      </div>
+      <p className="text-muted-foreground text-[11px]">
+        {active ? "The new length counts from now. " : ""}10 minutes up to a year. Their open games close and show the crux
+        screen; no games or commands for them until it ends.
+      </p>
+    </form>
+  ) : null
+
+  if (!active) {
+    return (
+      <div className="flex flex-col gap-2.5 rounded-md border px-3 py-2.5">
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-muted-foreground text-xs">🧊 No crux</div>
+          {!open ? (
+            <Button size="sm" variant="outline" onClick={() => setOpen(true)}>
+              Give crux
+            </Button>
+          ) : null}
+        </div>
+        {form}
+        {error}
+      </div>
+    )
+  }
+  return (
+    <div className="border-info/40 bg-info/10 flex flex-col gap-2.5 rounded-md border px-3 py-2.5">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0 text-xs">
+          <div className="font-medium">🧊 On a crux: {duration(until - Date.now() / 1000)} left</div>
+          <div className="text-muted-foreground">
+            Until {new Date(until * 1000).toLocaleString()}
+            {player.crux_started ? ` · started ${ago(player.crux_started)}` : ""}. No games or commands for them until then.
+          </div>
+        </div>
+        <div className="flex shrink-0 gap-1.5">
+          {!open ? (
+            <Button size="sm" variant="ghost" onClick={() => setOpen(true)}>
+              Change
+            </Button>
+          ) : null}
+          <Button size="sm" variant="outline" disabled={end.isPending} onClick={() => end.mutate()}>
+            {end.isPending ? "Ending…" : "Remove crux"}
+          </Button>
+        </div>
+      </div>
+      {form}
+      {error}
     </div>
   )
 }

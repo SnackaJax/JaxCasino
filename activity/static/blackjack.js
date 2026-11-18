@@ -1437,6 +1437,8 @@ async function animDealerCard(prev, st, ev) {
 }
 // what the dealer says when the round is paid: the dealer's total, then the winners and what each of them won
 // (everything they got back this round minus everything they bet, side bets included)
+const SUMMARY_WINNERS = 3;
+const COUNT_WORDS = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve'];
 function settleSpeech(st) {
   const d = st.dealer;
   let text = d.blackjack || d.total > 21 ? '' : `Dealer has ${d.total}. `;
@@ -1458,6 +1460,12 @@ function settleSpeech(st) {
   }
   // the same words for everyone at the table (names, never "you"), so the server makes each line only once
   const who = ([s]) => speakName(s.name);
+  // three or more winners: naming each one runs long, so the dealer sums it up instead
+  if (winners.length >= SUMMARY_WINNERS) {
+    const total = winners.reduce((a, [s]) => a + s.won - s.staked, 0);
+    const count = COUNT_WORDS[winners.length] || String(winners.length);
+    return `${text}Congratulations! ${count} players win ${speakAmount(total)} between them.`;
+  }
   const lines = winners.map(([s]) => `${speakName(s.name)} wins ${speakAmount(s.won - s.staked)}`);
   if (winners.length === 1) return `${text}Congratulations, ${who(winners[0])}! ${lines[0]}.`;
   return `${text}Congratulations to ${list(winners.map(who))}! ${lines.join(', ')}.`;

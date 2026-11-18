@@ -19,7 +19,7 @@ services:
       LOG_DIR: /data/logs
       ACTIVITY_HOST: 0.0.0.0
       ACTIVITY_PORT: "8765"
-      # the admin panel (only when ADMIN_PANEL_ENABLED=1 in .env), reachable from this machine only, see ports below
+      # the admin panel (only when ADMIN_PANEL_ENABLED=1 in .env); who can reach it is set in ports below
       ADMIN_PANEL_HOST: 0.0.0.0
       ADMIN_PANEL_PORT: "8780"
     volumes:
@@ -28,8 +28,9 @@ services:
     ports:
       # The Activity's web server, on this machine only. Point your HTTPS tunnel or reverse proxy at it.
       - "127.0.0.1:8765:8765"
-      # The admin panel, on this machine only (http://127.0.0.1:8780). Never point a tunnel at it.
-      - "127.0.0.1:8780:8780"
+      # The admin panel (http://127.0.0.1:8780). On this machine only, unless ADMIN_PANEL_BIND=0.0.0.0 in .env opens
+      # it to your home network (LAN) too. Never point a tunnel at it.
+      - "${ADMIN_PANEL_BIND:-127.0.0.1}:8780:8780"
     stop_signal: SIGINT
     stop_grace_period: 20s
     logging:

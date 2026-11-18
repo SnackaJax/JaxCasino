@@ -9,8 +9,21 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const fmt = (n) => Math.round(n).toLocaleString('en-US');
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const BUY_INS = [100, 250, 500, 1000, 2500, 5000, 10000, 25000, 50000, 100000, 250000, 500000, 1000000];
-const CHIP_COLORS = ['#c8302c', '#2b4fb8', '#0f7a4a', '#7b2fa0', '#111', '#d4a017'];
+const BUY_INS = [100, 250, 500, 1000, 2500, 5000, 10000, 25000, 50000, 100000, 250000, 500000, 1000000];   // if the server sends none
+// casino chips: value, colour, edge spots, text (the same set as blackjack.js), up to 10B for the high-stakes tables
+const DENOMS = [
+  [1, '#f2f2f2', '#3a6fd8', '#222'], [5, '#c8302c', '#fff', '#fff'], [10, '#2b5fc0', '#fff', '#fff'],
+  [25, '#178a4c', '#fff', '#fff'], [100, '#1d1d1d', '#e8bd57', '#fff'], [500, '#7b3fb3', '#fff', '#fff'],
+  [1000, '#e5a50a', '#5a3400', '#3a2400'], [5000, '#d9468f', '#fff', '#fff'], [10000, '#0f9a9a', '#fff', '#fff'],
+  [25000, '#8b5a2b', '#ffe3b0', '#fff'], [100000, '#9aa4b1', '#1d1d1d', '#1d1d1d'], [500000, '#5b1020', '#e8bd57', '#fff'],
+  [1000000, '#e8bd57', '#5b1020', '#3a2400'], [2000000, '#1f7a46', '#e8bd57', '#fff'],
+  [5000000, '#d0631a', '#fff3d6', '#fff'], [10000000, '#1b2f73', '#e8bd57', '#fff'],
+  [25000000, '#2c2c2c', '#c0c7d0', '#fff'], [50000000, '#a3122e', '#f2f2f2', '#fff'],
+  [100000000, '#f4f1e8', '#b8860b', '#3a2400'], [250000000, '#6b2fb3', '#f2d27a', '#fff'],
+  [500000000, '#0e7c86', '#e8bd57', '#fff'], [1000000000, '#141414', '#e8bd57', '#e8bd57'],
+  [2500000000, '#b0b8c4', '#1b2f73', '#1b2f73'], [5000000000, '#0096d6', '#fff', '#fff'],
+  [10000000000, '#8fce3a', '#1d1d1d', '#1d1d1d'],
+];
 
 {
   const p = new URLSearchParams(location.search);
@@ -113,15 +126,47 @@ $('infoBtn').addEventListener('click', () => $('infoModal').classList.remove('hi
 $('infoClose').addEventListener('click', () => $('infoModal').classList.add('hidden'));
 $('infoModal').addEventListener('click', (e) => { if (e.target === $('infoModal')) $('infoModal').classList.add('hidden'); });
 
+// ------------------------------------------------------------------ chips
+// Stacks are made of real chip values (like blackjack.js): a bet of 7.5M is a 5M, a 2M and a 500K chip, biggest at
+// the bottom. A stack has at most a handful of chips; the amount next to it says exactly how much it is.
+const denomFor = (v) => [...DENOMS].reverse().find((d) => d[0] <= v) || DENOMS[0];
+function chipHtml(v, style = '') {
+  const [, c, e, t] = denomFor(v);
+  return `<div class="chip" style="--c:${c};--e:${e};--t:${t};${style}"></div>`;
+}
+function chipsFor(amount, max) {
+  const out = [];
+  let left = amount;
+  for (let k = DENOMS.length - 1; k >= 0 && out.length < max; k--) {
+    const v = DENOMS[k][0];
+    while (left >= v && out.length < max) { out.push(v); left -= v; }
+  }
+  return out.length ? out : [DENOMS[0][0]];
+}
+function stackHtml(amount, max = 5) {
+  if (!(amount > 0)) return '';
+  const chips = chipsFor(amount, max);
+  const step = chips.length > 4 ? 2.5 : 3;
+  return chips.map((v, i) => chipHtml(v, `top:${(-i * step).toFixed(1)}px`)).join('');
+}
+// puts a stack worth `amount` in el (only redrawn when the amount changes)
+function setChips(el, amount, max) {
+  if (el._amount === amount) return;
+  el._amount = amount;
+  el.innerHTML = stackHtml(amount, max);
+}
+
 function avatarHtml(p, cls = 'avatar') {
   return p.avatar ? `<div class="${cls}" style="background-image:url('/avatar/${p.id}')"></div>`
     : `<div class="${cls}">${esc((p.name || '?').slice(0, 1).toUpperCase())}</div>`;
 }
+// a buy-in or blind in the room list and the table's info: 100M, 2.5M, 25,000
+const money = (v) => (v >= 1e6 ? shortNum(v) : fmt(v));
 const blindsFor = (b) => { const bb = Math.max(2, Math.floor(b / 50)); return [Math.max(1, Math.floor(bb / 2)), bb]; };
 
 // ------------------------------------------------------------------ the room
 function setupForm() {
-  const ok = BUY_INS.filter((v) => v >= W.min_buy_in);
+  const ok = W.buy_ins && W.buy_ins.length ? W.buy_ins : BUY_INS.filter((v) => v >= W.min_buy_in);
   if (!ok.includes(buyIn)) buyIn = ok[0];
   $('seatPick').innerHTML = [2, 3, 4, 5, 6, 7, 8].map((n) => `<button data-n="${n}">${n}</button>`).join('');
   $('seatPick').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
@@ -143,7 +188,7 @@ function renderForm() {
   if (!W) return;
   $('buyIn').textContent = fmt(buyIn);
   const [sb, bb] = blindsFor(buyIn);
-  $('blindsHint').textContent = `Blinds ${fmt(sb)} / ${fmt(bb)}` + (buyIn > balance ? ' · more than your balance' : '');
+  $('blindsHint').textContent = `Blinds ${money(sb)} / ${money(bb)}` + (buyIn > balance ? ' · more than your balance' : '');
   $('seatPick').querySelectorAll('button').forEach((b) => b.classList.toggle('on', Number(b.dataset.n) === seatsWanted));
   $('createBtn').disabled = buyIn > balance;
 }
@@ -182,10 +227,10 @@ function renderRoom() {
     const full = t.seated >= t.max;
     return `<div class="tstatus ${live ? 'live' : ''}">${live ? `LIVE · hand ${t.hand}` : 'WAITING'}</div>
       <div class="tname">${esc(t.name)}</div>
-      <div class="tmeta">Buy-in <b>${fmt(t.buy_in)}</b> · blinds ${fmt(t.sb)}/${fmt(t.bb)} · ${t.seated}/${t.max} seats</div>
+      <div class="tmeta">Buy-in <b>${money(t.buy_in)}</b> · blinds ${money(t.sb)}/${money(t.bb)} · ${t.seated}/${t.max} seats</div>
       <div class="tplayers">${esc(t.players.join(', '))}</div>
       <div class="tbtns"><button class="btn" data-watch="${t.id}">Watch</button>
-      <button class="btn btn-gold" data-sit="${t.id}" ${full || t.buy_in > balance ? 'disabled' : ''}>${full ? 'Full' : `Sit down · ${fmt(t.buy_in)}`}</button></div>`;
+      <button class="btn btn-gold" data-sit="${t.id}" ${full || t.buy_in > balance ? 'disabled' : ''}>${full ? 'Full' : `Sit down · ${money(t.buy_in)}`}</button></div>`;
   }, '<div class="empty">No tables open yet. Open one and invite the others!</div>');
   $('roomCount').textContent = `(${room.players.length})`;
   $('people').innerHTML = room.players.map((p) => {
@@ -251,16 +296,23 @@ const sameCard = (a, b) => a && b && a.r === b.r && a.s === b.s;
 const G = { seat: [], bet: [], dealer: [], compact: false, cw: 48, sw: 120 };
 let built = null;   // the state the seats were built for (positions depend on its seats and on the space)
 
+// an amount shortened to at most 4 digits: 12.5k, 250k, 2.5M, 9.08M, 487.5M, 1.25B (never "1000M")
 function shortNum(n) {
-  if (n >= 1e9) return `${(n / 1e9).toFixed(n >= 1e10 ? 1 : 2)}B`;
-  if (n >= 1e6) return `${(n / 1e6).toFixed(n >= 1e8 ? 0 : n >= 1e7 ? 1 : 2)}M`;
-  if (n >= 1e4) return `${(n / 1e3).toFixed(n >= 1e5 ? 0 : 1)}k`;
+  if (n < 1e4) return fmt(n);
+  for (const [d, u] of [[1e12, 'T'], [1e9, 'B'], [1e6, 'M'], [1e3, 'k']]) {
+    const x = n / d, t = +x.toFixed(x < 10 ? 2 : 1);
+    if (t >= 1) return `${t}${u}`;
+  }
   return fmt(n);
 }
-// an amount on the table: shortened (9.08M) when the seats are small; the full number shows on hover
+// an amount on the table (stacks, bets, the pot): shortened (2.5M, 487.5M) when the seats are small, at the
+// high-stakes tables (so a 5M blind and a 10M blind read alike) and from a billion up; the full number shows on hover
+const tableNum = (v) => (G.compact || G.big || v >= 1e9 ? shortNum(v) : fmt(v));
+// the amounts in a text from the server ("Raise to 20,000,000") written the same way: "Raise to 20M"
+const shortIn = (text) => text.replace(/\d{1,3}(,\d{3})+/g, (m) => tableNum(Number(m.replace(/,/g, ''))));
 function setAmount(el, v) {
   el.dataset.v = v;
-  el.textContent = G.compact ? shortNum(v) : fmt(v);
+  el.textContent = tableNum(v);
   el.title = fmt(v);
 }
 
@@ -397,10 +449,11 @@ function buildTable(st) {
     resizer.observe(root);
     const bet = document.createElement('div');
     bet.className = 'bet hidden';
-    bet.innerHTML = `<div class="chips">${[0, 1, 2].map((k) => `<div class="chip" style="top:${-k * 3}px;--c:${CHIP_COLORS[(i + k) % CHIP_COLORS.length]}"></div>`).join('')}</div><span></span>`;
+    bet.innerHTML = '<div class="chips"></div><span></span>';
     host.appendChild(bet);
     return { root, hand: cards, plate, ring: plate.querySelector('.ring'), stk: plate.querySelector('.stk'),
-      tag: plate.querySelector('.tag'), streak: plate.querySelector('.streak'), bet, betAmt: bet.querySelector('span') };
+      tag: plate.querySelector('.tag'), streak: plate.querySelector('.streak'), bet, betChips: bet.querySelector('.chips'),
+      betAmt: bet.querySelector('span') };
   });
   dealerEl = document.createElement('div');
   dealerEl.className = 'dealer-btn hidden'; dealerEl.textContent = 'D';
@@ -414,6 +467,7 @@ function buildTable(st) {
 function renderStatic(st, opts = {}) {
   if (!st) return;
   const key = `${st.id}|${st.you}|${st.seats.map((s) => s.id).join(',')}`;
+  G.big = st.buy_in >= 1e7;
   if (key !== layoutKey) buildTable(st);
   const between = st.phase === 'between';
   const winners = new Set(st.seats.filter((s) => s.won > 0).map((s) => s.id));
@@ -433,7 +487,7 @@ function renderStatic(st, opts = {}) {
     if (between && s.hand) { tag = s.hand; tagCls = 'handname'; }
     else if (s.leaving) tag = 'Leaving';
     else if (s.in_hand && s.all_in && !s.folded) { tag = 'All-in'; tagCls = 'allin'; }
-    else if (s.last) { tag = s.last; tagCls = /fold/i.test(s.last) ? 'fold' : /raise|bet/i.test(s.last) ? 'raise' : ''; }
+    else if (s.last) { tag = shortIn(s.last); tagCls = /fold/i.test(s.last) ? 'fold' : /raise|bet/i.test(s.last) ? 'raise' : ''; }
     else if (!s.in_hand && st.phase === 'playing') tag = 'Next hand';
     e.tag.textContent = tag; e.tag.className = `tag ${tagCls}` + (tag ? '' : ' hidden');
     // cards
@@ -449,6 +503,7 @@ function renderStatic(st, opts = {}) {
     // bet in front of the seat
     const bet = s.bet || 0;
     e.bet.classList.toggle('hidden', !bet || opts.hideBets);
+    if (bet) setChips(e.betChips, bet, 5);
     setAmount(e.betAmt, bet);
   });
   placeDealer(st);
@@ -465,10 +520,10 @@ function renderStatic(st, opts = {}) {
   });
   const bets = st.seats.reduce((a, s) => a + (s.bet || 0), 0);
   const potShown = opts.potOverride !== undefined ? opts.potOverride : st.pot - bets;
-  $('potAmount').textContent = fmt(potShown);
+  showPot(potShown);
   $('pot').style.visibility = potShown > 0 ? 'visible' : 'hidden';
   $('street').textContent = st.street || (between ? 'SHOWDOWN' : '');
-  $('result').textContent = st.result || '';
+  $('result').textContent = shortIn(st.result || '');
   // waiting message
   const msg = $('tableMsg');
   if (st.phase === 'waiting') {
@@ -484,6 +539,12 @@ function renderStatic(st, opts = {}) {
 }
 
 
+// the pot in the middle: its chips and amount
+function showPot(v) {
+  setChips($('potChips'), v, 4);
+  setAmount($('potAmount'), v);
+}
+
 // The table log, newest line on top. Re-drawn only when it changes; someone scrolled down to older lines stays on
 // the same lines when a new one comes in at the top.
 function renderLog(lines) {
@@ -497,9 +558,9 @@ function renderLog(lines) {
 }
 
 function renderSide(st) {
-  $('crumb').textContent = `${st.name} · blinds ${fmt(st.sb)}/${fmt(st.bb)}`;
+  $('crumb').textContent = `${st.name} · blinds ${money(st.sb)}/${money(st.bb)}`;
   const me = st.you >= 0 ? st.seats[st.you] : null;
-  $('tableInfo').innerHTML = `<b>${esc(st.name)}</b><br>Buy-in ${fmt(st.buy_in)} · blinds ${fmt(st.sb)}/${fmt(st.bb)}<br>
+  $('tableInfo').innerHTML = `<b>${esc(st.name)}</b><br>Buy-in ${money(st.buy_in)} · blinds ${money(st.sb)}/${money(st.bb)}<br>
     ${st.seats.length}/${st.max} seats · ${st.hand_no ? `hand #${st.hand_no}` : 'not started'}
     ${me ? `<br>Your chips: <b>${fmt(me.stack)}</b>` : '<br>You are watching'}`;
   renderLog(st.log);
@@ -508,7 +569,7 @@ function renderSide(st) {
 // ------------------------------------------------------------------ controls
 let raiseTo = 0;
 // amounts on the action buttons: shortened (250k) on narrow screens so the buttons fit on one line
-const amt = (v) => (innerWidth < 600 ? shortNum(v) : fmt(v));
+const amt = (v) => (innerWidth < 600 || G.big ? shortNum(v) : fmt(v));
 function renderControls(st) {
   const me = st.you >= 0 ? st.seats[st.you] : null;
   const myTurn = me && st.turn === st.you && st.to_call !== undefined;
@@ -536,7 +597,7 @@ function renderControls(st) {
     const seated = !!me;
     const full = st.seats.length >= st.max;
     $('sitBtn').classList.toggle('hidden', seated || full);
-    $('sitBtn').textContent = `Sit down · ${fmt(st.buy_in)}`;
+    $('sitBtn').textContent = `Sit down · ${money(st.buy_in)}`;
     $('sitBtn').disabled = st.buy_in > balance;
     $('startBtn').classList.toggle('hidden', !(seated && st.host === myId && st.phase === 'waiting' && st.hand_no === 0 && st.seats.length >= 2));
     $('leaveBtn').classList.toggle('hidden', !seated);
@@ -620,10 +681,11 @@ function flyingCard(sizeEl) {
   c.style.width = `${r.width}px`; c.style.height = `${r.height}px`;
   return c;
 }
-function chipPile(n = 3, k = 0) {
+// a small pile of chips worth `amount`, for flying across the table
+function chipPile(amount, max = 3) {
   const el = document.createElement('div');
   el.className = 'chips';
-  el.innerHTML = Array.from({ length: n }, (_, i) => `<div class="chip" style="top:${-i * 3}px;--c:${CHIP_COLORS[(k + i) % CHIP_COLORS.length]}"></div>`).join('');
+  el.innerHTML = stackHtml(amount, max);
   return el;
 }
 
@@ -659,7 +721,7 @@ async function animDeal(prev, st, ev) {
       const e = seatEls[i];
       e.bet.classList.add('hidden');
       const [px, py] = centerOf(e.plate), [bx, by] = centerOf(e.bet);
-      flyEl(chipPile(2, i), [px, py], [bx, by], 450).then(() => { e.bet.classList.remove('hidden'); });
+      flyEl(chipPile(s.bet, 2), [px, py], [bx, by], 450).then(() => { e.bet.classList.remove('hidden'); });
       sfx.chips(2);
     }
   });
@@ -718,9 +780,11 @@ async function animAction(prev, st, ev) {
   const bigBet = ev.action === 'allin';
   if (bigBet) sfx.allin(); else sfx.chips(ev.action === 'raise' ? 6 : 3);
   const piles = bigBet ? 4 : ev.action === 'raise' ? 2 : 1;
+  // what this action put in, shared out over the piles that fly
+  const put = Math.max(1, ((st.seats[i] && st.seats[i].bet) || 0) - ((prev && prev.seats[i] && prev.seats[i].bet) || 0));
   const flights = [];
   for (let k = 0; k < piles; k++) {
-    flights.push(flyEl(chipPile(3, i + k), [px, py], [bx + (k - (piles - 1) / 2) * 6, by], 420 + k * 60));
+    flights.push(flyEl(chipPile(Math.max(1, Math.floor(put / piles)), 3), [px, py], [bx + (k - (piles - 1) / 2) * 6, by], 420 + k * 60));
     await sleep(60);
   }
   await Promise.all(flights);
@@ -736,13 +800,13 @@ async function animCollect(prev) {
     const e = seatEls[i];
     const [bx, by] = centerOf(e.bet);
     e.bet.classList.add('hidden');
-    flights.push(flyEl(chipPile(3, i), [bx, by], [cx, cy], 450, { easing: 'cubic-bezier(.5,0,.2,1)' }));
+    flights.push(flyEl(chipPile(s.bet, 4), [bx, by], [cx, cy], 450, { easing: 'cubic-bezier(.5,0,.2,1)' }));
   });
   if (flights.length) {
     sfx.sweep();
     await Promise.all(flights);
     const pot = $('pot'); pot.style.visibility = 'visible';
-    $('potAmount').textContent = fmt(prev.pot);
+    showPot(prev.pot);
     pot.classList.remove('bump'); void pot.offsetWidth; pot.classList.add('bump');
     await sleep(150);
   }
@@ -807,12 +871,12 @@ async function animWin(prev, st, ev) {
     if (!e) continue;
     const [sx, sy] = centerOf(e.plate);
     for (let k = 0; k < 4; k++) {
-      flights.push(flyEl(chipPile(3, p.seat + k), [cx + (k - 1.5) * 5, cy], [sx, sy], 600 + k * 70,
+      flights.push(flyEl(chipPile(Math.max(1, Math.floor(p.amount / 4)), 3), [cx + (k - 1.5) * 5, cy], [sx, sy], 600 + k * 70,
         { easing: 'cubic-bezier(.4,0,.2,1)' }));
     }
     const f = document.createElement('div');
     f.className = 'won-float';
-    f.textContent = `+${fmt(p.amount)}`;
+    f.textContent = `+${tableNum(p.amount)}`;
     const [ax, ay] = centerOf(e.root);
     f.style.left = `${ax}px`; f.style.top = `${ay - 30}px`;
     area.appendChild(f);

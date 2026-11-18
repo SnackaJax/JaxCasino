@@ -69,6 +69,9 @@ MAX_TABLES = 8                # per server
 MAX_SEATS = 7
 MAX_SEATS_EACH = MAX_SEATS    # seats one player can take at the same table (no limit: every free one)
 MAX_BET_MULT = 100            # a table's maximum bet is this many times its minimum
+# the minimum bets a table can have; the high-stakes ones at the end
+MIN_BETS = (10, 25, 50, 100, 250, 500, 1_000, 2_500, 5_000, 10_000, 25_000, 50_000, 100_000, 250_000, 500_000,
+            1_000_000, 100_000_000, 250_000_000, 500_000_000)
 MAX_MESSAGES_PER_SECOND = 12
 # pauses, so the page can animate each step
 DEAL_EACH = 0.28              # per card dealt
@@ -112,6 +115,12 @@ def card(c: Card) -> dict:
 
 class Rejected(Exception):
     pass
+
+
+def min_bets(settings) -> list[int]:
+    """The minimum bets a table can be opened with on this bot (within the bot's own minimum and maximum bet)."""
+    return [v for v in MIN_BETS if v >= settings.min_bet and (not settings.max_bet or v <= settings.max_bet)] \
+        or [settings.min_bet]
 
 
 def perfect_pairs(a: Card, b: Card) -> str | None:
@@ -956,6 +965,8 @@ class Room:
                 raise Rejected(f"The minimum bet must be at least {s.min_bet:,}.")
             if s.max_bet and min_bet > s.max_bet:
                 raise Rejected(f"The minimum bet can't be more than the bot's maximum bet ({s.max_bet:,}).")
+            if min_bet not in min_bets(s):
+                raise Rejected("Pick one of the minimum bets on the list.")
             if not 1 <= max_players <= MAX_SEATS:
                 raise Rejected(f"A table has 1 to {MAX_SEATS} seats.")
             if self.table_of(v.user_id):
@@ -1118,6 +1129,7 @@ class BlackjackHub:
     def welcome(self, user_id: int) -> dict:
         s = self.server.settings
         return {"type": "welcome", "you": str(user_id), "min_bet": s.min_bet, "max_bet": s.max_bet,
+                "min_bets": min_bets(s),
                 "bet_time": BET_TIME, "turn_time": TURN_TIME, "max_tables": MAX_TABLES, "max_seats": MAX_SEATS,
                 "max_each": MAX_SEATS_EACH,
                 "max_mult": MAX_BET_MULT, "decks": DECKS, "max_hands": MAX_HANDS,

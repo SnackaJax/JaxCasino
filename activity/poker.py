@@ -44,6 +44,9 @@ TURN_TIME = 30            # seconds a player has to act
 NEXT_HAND_DELAY = 9       # seconds between hands (the showdown and the pot sliding to the winner play meanwhile)
 MAX_TIMEOUTS = 2          # consecutive timeouts before a player is removed
 MAX_TABLES = 8            # per server
+# the buy-ins a table can have (the blinds are a 50th and a 100th of it); the high-stakes ones at the end
+BUY_INS = (100, 250, 500, 1_000, 2_500, 5_000, 10_000, 25_000, 50_000, 100_000, 250_000, 500_000, 1_000_000,
+           100_000_000, 250_000_000, 500_000_000)
 MAX_MESSAGES_PER_SECOND = 12
 DEAL_PAUSE = 2.2          # seconds for the page to deal the cards before the first turn
 STREET_PAUSE = 1.3        # seconds for the page to show new board cards
@@ -61,6 +64,12 @@ def card(c: Card) -> dict:
 
 class Rejected(Exception):
     pass
+
+
+def buy_ins(settings) -> list[int]:
+    """The buy-ins a table can be opened with on this bot (none under the minimum bet, and at least 20)."""
+    low = max(20, settings.min_bet)
+    return [v for v in BUY_INS if v >= low] or [low]
 
 
 @dataclass
@@ -697,6 +706,8 @@ class Room:
             s = self.hub.server.settings
             if buy_in < max(20, s.min_bet):
                 raise Rejected(f"The buy-in must be at least {max(20, s.min_bet):,}.")
+            if buy_in not in buy_ins(s):
+                raise Rejected("Pick one of the buy-ins on the list.")
             if not 2 <= max_players <= 8:
                 raise Rejected("A table has 2 to 8 seats.")
             if self.table_of(v.user_id):
@@ -769,7 +780,8 @@ class PokerHub:
 
     def welcome(self, user_id: int) -> dict:
         s = self.server.settings
-        return {"type": "welcome", "you": str(user_id), "min_buy_in": max(20, s.min_bet), "turn_time": TURN_TIME,
+        return {"type": "welcome", "you": str(user_id), "min_buy_in": max(20, s.min_bet), "buy_ins": buy_ins(s),
+                "turn_time": TURN_TIME,
                 "max_tables": MAX_TABLES, "rake": config.POKER_RAKE}
 
     async def websocket(self, request: web.Request) -> web.WebSocketResponse:

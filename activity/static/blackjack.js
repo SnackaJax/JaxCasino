@@ -12,7 +12,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const fmt = (n) => Math.round(n).toLocaleString('en-US');
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const MIN_BETS = [10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 25000, 50000, 100000, 250000, 500000, 1000000];
+const MIN_BETS = [10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 25000, 50000, 100000, 250000, 500000, 1000000];   // if the server sends none
 // casino chips: value, colour, edge spots, text
 const DENOMS = [
   [1, '#f2f2f2', '#3a6fd8', '#222'], [5, '#c8302c', '#fff', '#fff'], [10, '#2b5fc0', '#fff', '#fff'],
@@ -22,7 +22,10 @@ const DENOMS = [
   [1000000, '#e8bd57', '#5b1020', '#3a2400'], [2000000, '#1f7a46', '#e8bd57', '#fff'],
   [5000000, '#d0631a', '#fff3d6', '#fff'], [10000000, '#1b2f73', '#e8bd57', '#fff'],
   [25000000, '#2c2c2c', '#c0c7d0', '#fff'], [50000000, '#a3122e', '#f2f2f2', '#fff'],
-  [100000000, '#f4f1e8', '#b8860b', '#3a2400'],
+  [100000000, '#f4f1e8', '#b8860b', '#3a2400'], [250000000, '#6b2fb3', '#f2d27a', '#fff'],
+  [500000000, '#0e7c86', '#e8bd57', '#fff'], [1000000000, '#141414', '#e8bd57', '#e8bd57'],
+  [2500000000, '#b0b8c4', '#1b2f73', '#1b2f73'], [5000000000, '#0096d6', '#fff', '#fff'],
+  [10000000000, '#8fce3a', '#1d1d1d', '#1d1d1d'],
 ];
 const RACK = ['#1d1d1d', '#7b3fb3', '#e5a50a', '#178a4c', '#c8302c', '#2b5fc0', '#0f9a9a', '#d9468f', '#1d1d1d'];
 
@@ -38,12 +41,20 @@ let ws = null, session = null, joinInfo = null, fatal = false, retry = 0, offset
 let minBet = 100, seatsWanted = 5;
 const srv = () => Date.now() + offset;
 
+// an amount shortened to at most 4 digits: 2.5k, 250k, 2.5M, 9.08M, 487.5M, 12.5B (never "1000M")
 function shortNum(n) {
-  if (n >= 1e9) return `${+(n / 1e9).toFixed(n >= 1e10 ? 1 : 2)}B`;
-  if (n >= 1e6) return `${+(n / 1e6).toFixed(n >= 1e8 ? 0 : n >= 1e7 ? 1 : 2)}M`;
-  if (n >= 1e3) return `${+(n / 1e3).toFixed(n >= 1e5 ? 0 : 1)}k`;
+  if (n < 1e3) return fmt(n);
+  for (const [d, u] of [[1e12, 'T'], [1e9, 'B'], [1e6, 'M'], [1e3, 'k']]) {
+    const x = n / d, t = +x.toFixed(x < 10 ? 2 : 1);
+    if (t >= 1) return `${t}${u}`;
+  }
   return fmt(n);
 }
+// a table limit in the room list and the table's info: 100M, 2.5M, 25,000
+const money = (v) => (v >= 1e6 ? shortNum(v) : fmt(v));
+// an amount on the table (bets, wins): shortened (2.5M, 487.5M) when the seats are small, at the high-stakes tables
+// (a 1M minimum and up, so amounts side by side read alike) and from a billion up; the full number shows on hover
+const tableNum = (v) => (G.compact || G.big || v >= 1e9 ? shortNum(v) : fmt(v));
 
 // ------------------------------------------------------------------ connection
 function loading(text) { $('loading').classList.remove('hidden'); $('loadingText').textContent = text; }
@@ -223,7 +234,8 @@ function chipPile(amount, max = 5) {
 
 // ------------------------------------------------------------------ the room
 function setupForm() {
-  const ok = MIN_BETS.filter((v) => v >= W.min_bet && (!W.max_bet || v <= W.max_bet));
+  const ok = W.min_bets && W.min_bets.length ? [...W.min_bets]
+    : MIN_BETS.filter((v) => v >= W.min_bet && (!W.max_bet || v <= W.max_bet));
   if (!ok.length) ok.push(W.min_bet);
   if (!ok.includes(minBet)) minBet = ok[0];
   $('seatPick').innerHTML = Array.from({ length: W.max_seats }, (_, k) => `<button data-n="${k + 1}">${k + 1}</button>`).join('');
@@ -249,7 +261,7 @@ function tableMax(min) {
 function renderForm() {
   if (!W) return;
   $('minBet').textContent = fmt(minBet);
-  $('limitsHint').textContent = `Bets ${fmt(minBet)} – ${fmt(tableMax(minBet))}` + (minBet > balance ? ' · more than your balance' : '');
+  $('limitsHint').textContent = `Bets ${money(minBet)} – ${money(tableMax(minBet))}` + (minBet > balance ? ' · more than your balance' : '');
   $('seatPick').querySelectorAll('button').forEach((b) => b.classList.toggle('on', Number(b.dataset.n) === seatsWanted));
 }
 // The tables in the room list, kept by id: the list is updated in place (the room list comes again on every bet and
@@ -288,7 +300,7 @@ function renderRoom() {
     const full = t.seated >= t.max;
     return `<div class="tstatus ${live ? 'live' : ''}">${live ? `LIVE · round ${t.round}` : 'BETTING'}</div>
       <div class="tname">${esc(t.name)}</div>
-      <div class="tmeta">Bets <b>${fmt(t.min_bet)}</b> – <b>${fmt(t.max_bet)}</b> · ${t.seated}/${t.max} seats</div>
+      <div class="tmeta">Bets <b>${money(t.min_bet)}</b> – <b>${money(t.max_bet)}</b> · ${t.seated}/${t.max} seats</div>
       <div class="tplayers">${esc(t.players.join(', '))}</div>
       <div class="tbtns"><button class="btn" data-watch="${t.id}">Watch</button>
       <button class="btn btn-gold" data-sit="${t.id}" ${full ? 'disabled' : ''}>${full ? 'Full' : 'Sit down'}</button></div>`;
@@ -782,7 +794,7 @@ function setStack(i, amount) {
     e.stack.innerHTML = stackHtml(amount);
   }
   e.amt.classList.toggle('hidden', !amount);
-  e.amt.textContent = G.compact ? shortNum(amount) : fmt(amount);
+  e.amt.textContent = tableNum(amount);
   e.amt.title = fmt(amount);
 }
 
@@ -790,6 +802,7 @@ function setStack(i, amount) {
 function renderStatic(st, opts = {}) {
   if (!st) return;
   const key = `${st.id}|${st.max}`;
+  G.big = st.min_bet >= 1e6;
   if (key !== layoutKey) buildTable(st);
   const mine = st.mine || [];
   const more = mine.length < ((W && W.max_each) || 1);
@@ -828,7 +841,7 @@ function renderStatic(st, opts = {}) {
     else if (st.phase === 'betting') { text = s.bet ? (s.ready ? 'Ready ✓' : 'Betting…') : 'No bet'; cls = s.ready ? 'good' : ''; }
     else if (!s.hands.length) text = 'Next round';
     else if (st.phase === 'settle') {
-      text = net > 0 ? `+${G.compact ? shortNum(net) : fmt(net)}` : net < 0 ? `−${G.compact ? shortNum(-net) : fmt(-net)}` : 'Push';
+      text = net > 0 ? `+${tableNum(net)}` : net < 0 ? `−${tableNum(-net)}` : 'Push';
       cls = net > 0 ? 'good' : net < 0 ? 'bad' : '';
     } else if (turn) { text = 'Playing…'; cls = 'gold'; }
     else text = s.hands.every((h) => h.done) ? 'Done' : 'Waiting';
@@ -863,17 +876,17 @@ function renderLog(lines) {
 }
 
 function renderSide(st) {
-  $('crumb').textContent = `${st.name} · bets ${fmt(st.min_bet)}–${fmt(st.max_bet)}`;
+  $('crumb').textContent = `${st.name} · bets ${money(st.min_bet)}–${money(st.max_bet)}`;
   const me = st.you >= 0 ? st.seats[st.you] : null;
   const seated = st.seats.filter(Boolean).length;
-  $('tableInfo').innerHTML = `<b>${esc(st.name)}</b><br>Bets ${fmt(st.min_bet)} – ${fmt(st.max_bet)}<br>
+  $('tableInfo').innerHTML = `<b>${esc(st.name)}</b><br>Bets ${money(st.min_bet)} – ${money(st.max_bet)}<br>
     ${seated}/${st.max} seats · ${st.round ? `round #${st.round}` : 'no rounds yet'}
     ${me ? '' : '<br>You are watching'}`;
   renderLog(st.log);
 }
 
 // ------------------------------------------------------------------ controls
-const amt = (v) => (innerWidth < 600 ? shortNum(v) : fmt(v));
+const amt = (v) => (innerWidth < 600 || G.big ? shortNum(v) : fmt(v));
 function chipValues(st) {
   const all = DENOMS.map((d) => d[0]);
   // one chip under the minimum (half of it or more, e.g. 500K at a 1M table) to top a bet up between whole minimums;
@@ -1299,7 +1312,7 @@ async function animSide(prev, st, ev) {
   // the winnings come out of the rack and are stacked on top of the side bet; they stay there until the round is paid
   flights = wins.filter((r) => spotEls[r.seat]).map((r) =>
     flyEl(chipPile(r.payout - r.stake, 5), G.rack, sideOf(r.seat, r.bet), 560, { arc: 20 })
-      .then(() => { setSideStack(r.seat, r.bet, [r.stake, r.payout - r.stake]); float(r.seat, `+${fmt(r.payout - r.stake)}`); }));
+      .then(() => { setSideStack(r.seat, r.bet, [r.stake, r.payout - r.stake]); float(r.seat, `+${tableNum(r.payout - r.stake)}`); }));
   sfx.chips(8);
   await Promise.all(flights);
   if (mine.length) sfx.win(true);
@@ -1507,8 +1520,8 @@ async function animSettle(prev, st, ev) {
       setStack(i, 0);
       flights.push(flyEl(chipPile(back, 5), circleOf(i), plateOf(i), 480));
     }
-    if (net > 0) float(i, `+${fmt(net)}`);
-    else if (net < 0) float(i, `−${fmt(-net)}`, 'bad');
+    if (net > 0) float(i, `+${tableNum(net)}`);
+    else if (net < 0) float(i, `−${tableNum(-net)}`, 'bad');
     else float(i, 'PUSH', 'push');
   }
   for (const [i, k, total] of sideWins) {

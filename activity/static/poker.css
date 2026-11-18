@@ -171,10 +171,14 @@ body.discord-mobile #app { padding-top: max(env(safe-area-inset-top), var(--disc
   transition: left .6s ease, top .6s ease; z-index: 3; }
 .bet { position: absolute; transform: translate(-50%, -50%); display: flex; align-items: center; gap: 4px; font-weight: 800; font-size: 12px;
   font-variant-numeric: tabular-nums; text-shadow: 0 1px 2px #000; z-index: 3; pointer-events: none; }
-.chips { position: relative; width: 20px; height: 20px; }
-.chip { position: absolute; left: 0; width: 20px; height: 20px; border-radius: 50%; border: 3px dashed rgba(255,255,255,.85);
-  box-shadow: 0 1px 2px rgba(0,0,0,.6); background: var(--c, #c8302c); }
-.chip-icon { width: 14px; height: 14px; border-radius: 50%; border: 2px dashed rgba(255,255,255,.85); background: #c8302c; }
+/* casino chips (as in blackjack.css): a coloured disc with edge spots and an inner ring; --c colour, --e spots */
+.chips { --chip: 20px; position: relative; width: var(--chip); height: var(--chip); flex: none; }
+.chip { position: absolute; left: 0; width: var(--chip); height: var(--chip); border-radius: 50%;
+  background: radial-gradient(circle, var(--c) 0 50%, transparent 51%),
+    repeating-conic-gradient(var(--c) 0 22.5deg, var(--e, #fff) 22.5deg 45deg);
+  box-shadow: 0 2px 0 color-mix(in srgb, var(--c) 55%, #000), 0 3px 4px rgba(0,0,0,.55), inset 0 0 0 1px rgba(0,0,0,.25); }
+.chip::after { content: ""; position: absolute; inset: 22%; border-radius: 50%; border: 1.5px dashed rgba(255,255,255,.6); }
+.pot .chips { --chip: 16px; margin-top: 4px; }
 /* small seats (phones, small windows): a smaller avatar so the name and stack keep their room */
 .compact .seat .plate { gap: 4px; padding: 4px 6px 4px 4px; border-radius: 12px; }
 .compact .seat .ring { width: 26px; height: 26px; padding: 2px; }

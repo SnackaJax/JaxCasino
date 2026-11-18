@@ -1,5 +1,5 @@
 import * as React from "react"
-import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useQuery } from "@tanstack/react-query"
 import {
   ChartPieSliceIcon,
   ClockCounterClockwiseIcon,
@@ -46,7 +46,6 @@ function storedGuild(): string | null {
 }
 
 export function Shell({ session }: { session: Session }) {
-  const qc = useQueryClient()
   const [page, setPage] = React.useState<PageKey>(readHash)
   const guilds = useQuery({ queryKey: ["guilds"], queryFn: () => api.get<Guild[]>("/api/guilds") })
   const [guildId, setGuildId] = React.useState<string | null>(storedGuild)
@@ -69,8 +68,8 @@ export function Shell({ session }: { session: Session }) {
 
   async function signOut() {
     await api.post("/api/logout", {}).catch(() => undefined)
-    qc.clear()
-    qc.setQueryData<Session>(["session"], { authenticated: false })
+    // a fresh load opens the sign-in page, with nothing of the old session left in memory
+    window.location.replace("/")
   }
 
   let nav: { key: PageKey; label: string; icon: typeof ChartPieSliceIcon }[] = (Object.keys(PAGES) as (keyof typeof PAGES)[]).map(

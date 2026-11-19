@@ -2,6 +2,9 @@
 
 The game logic lives in utils/slot_engine.py and the picture in utils/slot_image.py. A whole round (the paid
 spin plus any free spins) is decided up front, then animated, then paid out in one go.
+
+The bonus buy (/slots buy:Free Spins, SLOTS_BUYS in .env) costs E.BUY_PRICE times the bet for a spin that is sure to
+start free spins. It is played and paid exactly like a paid spin: every pay is a multiple of the bet, not the price.
 """
 import asyncio
 import io
@@ -24,6 +27,9 @@ from utils.views import BaseView
 log = logging.getLogger("jaxcasino.slots")
 
 BET_DESC = "Total bet for all 20 lines: any amount (e.g. 1234) or a shortcut: 2.5k, 1m, half, all"
+BUY_DESC = (f"Bonus buy: pay {E.BUY_PRICE:g}x your bet for a spin that is sure to land {E.BUY_COMETS} comets "
+            f"({E.FREE_SPINS[E.BUY_COMETS]} free spins)")
+BUYS_OFF = "Bonus buys are switched off on this server."
 REEL_STEP = 0.7       # seconds between reel stops
 FREE_SPIN_PAUSE = 1.0
 VIEW_TIMEOUT = 180
@@ -94,19 +100,25 @@ def paytable_embed() -> discord.Embed:
         f"{sym_name(E.SCATTER)} — 3 or more anywhere start free spins ({spins} spins). During free spins every "
         f"wild that lands **sticks** until they end, and 3 more comets add {E.RETRIGGER_SPINS} spins.\n\n"
         f"Maximum win: {E.MAX_WIN:,}x your bet per spin. Returns {config.SLOTS_RTP * 100:g}% of bets "
-        f"on average."))
+        f"on average."
+        + (f"\n\n**Bonus buy:** `/slots buy:{E.BUY_NAME}` costs **{E.BUY_PRICE:g}x** your bet for a spin that is "
+           f"sure to land {E.BUY_COMETS} comets ({E.FREE_SPINS[E.BUY_COMETS]} free spins). It pays back "
+           f"{E.buy_rtp(config.SLOTS_RTP) * 100:.1f}% on average." if config.SLOTS_BUYS else "")))
     e.set_image(url="attachment://paylines.png")
     return e
 
 
 class SlotView(BaseView):
-    def __init__(self, cog: "Slots", owner: discord.abc.User, stake: int):
+    def __init__(self, cog: "Slots", owner: discord.abc.User, bet: int, mode: str = "spin"):
         super().__init__(timeout=VIEW_TIMEOUT)
         self.cog = cog
         self.owner = owner
-        self.stake = stake
+        self.bet = bet
+        self.mode = mode           # "spin", or "free" for the bonus buy (the button buys it again)
         self.busy = False
         self.message: discord.Message | discord.InteractionMessage | None = None
+        if mode != "spin":
+            self.spin_again.label = f"Buy again ({E.BUY_PRICE:g}x)"
 
     def set_busy(self, busy: bool) -> None:
         self.busy = busy
@@ -123,10 +135,13 @@ class SlotView(BaseView):
         if self.busy:
             await interaction.response.defer()
             return
+        if self.mode != "spin" and not config.SLOTS_BUYS:
+            await send_error(interaction, BUYS_OFF)
+            return
         if not await self.cog.claim(interaction):
             return
         try:
-            wager = await take_bet(interaction, str(self.stake), "slots")
+            wager = await take_bet(interaction, str(self.bet), "slots", *buy_price(self.mode))
             if not wager:
                 return
             self.message = interaction.message
@@ -138,7 +153,7 @@ class SlotView(BaseView):
             async def edit(e, png, view):
                 await interaction.edit_original_response(embed=e, attachments=[slot_file(png)], view=view)
 
-            await self.cog.play(self.owner, wager, self, first, edit)
+            await self.cog.play(self.owner, wager, self, first, edit, self.mode)
         finally:
             self.cog.release(interaction)
 
@@ -161,6 +176,11 @@ def slot_file(png: bytes) -> discord.File:
     return discord.File(io.BytesIO(png), filename="slots.png")
 
 
+def buy_price(mode: str) -> tuple[float, str]:
+    """take_bet's price and name for a round in this mode."""
+    return (1, "") if mode == "spin" else (E.BUY_PRICE, E.BUY_NAME)
+
+
 class Slots(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -181,16 +201,21 @@ class Slots(commands.Cog):
         self.spinning.discard((interaction.guild_id, interaction.user.id))
 
     @app_commands.command(name="slots", description="Cosmic Lab: a 6x4 slot with 20 paylines and free spins.")
-    @app_commands.describe(bet=BET_DESC)
+    @app_commands.describe(bet=BET_DESC, buy=BUY_DESC)
+    @app_commands.choices(buy=[app_commands.Choice(name=f"{E.BUY_NAME} ({E.BUY_PRICE:g}x your bet)", value="free")])
     @gambling_only()
-    async def slots(self, interaction: discord.Interaction, bet: str):
+    async def slots(self, interaction: discord.Interaction, bet: str, buy: app_commands.Choice[str] | None = None):
+        mode = buy.value if buy else "spin"
+        if mode != "spin" and not config.SLOTS_BUYS:
+            await send_error(interaction, BUYS_OFF)
+            return
         if not await self.claim(interaction):
             return
         try:
-            wager = await take_bet(interaction, bet, "slots")
+            wager = await take_bet(interaction, bet, "slots", *buy_price(mode))
             if not wager:
                 return
-            view = SlotView(self, interaction.user, wager.stake)
+            view = SlotView(self, interaction.user, wager.bet, mode)
             view.set_busy(True)
 
             async def first(e, png, v):
@@ -204,13 +229,16 @@ class Slots(commands.Cog):
             async def edit(e, png, v):
                 await interaction.edit_original_response(embed=e, attachments=[slot_file(png)], view=v)
 
-            await self.play(interaction.user, wager, view, first, edit)
+            await self.play(interaction.user, wager, view, first, edit, mode)
         finally:
             self.release(interaction)
 
-    async def play(self, user: discord.abc.User, wager, view: SlotView, first: Edit, edit: Edit) -> None:
-        stake = wager.stake
-        rnd = E.play_round(rng)
+    async def play(self, user: discord.abc.User, wager, view: SlotView, first: Edit, edit: Edit,
+                   mode: str = "spin") -> None:
+        # every pay is a multiple of the bet; for the bonus buy the stake (what was paid) is its price x the bet
+        paid = wager.stake
+        stake = wager.bet
+        rnd = E.play_round(rng, mode)
         base = rnd.base
         cap = stake * E.MAX_WIN
         base_won = min(sum(credits(stake, w.pay) for w in base.wins), cap)
@@ -227,7 +255,8 @@ class Slots(commands.Cog):
 
         try:
             # Paid spin: reels stop left to right.
-            spinning = f"Bet {fmt(stake)} on 20 lines — spinning..."
+            spinning = (f"Bet {fmt(stake)} on 20 lines — spinning..." if mode == "spin" else
+                        f"☄️ Bought **{E.BUY_NAME}** for {fmt(paid)} (bet {fmt(stake)}) — spinning...")
             await show(SlotFrame(base.grid, stopped=0, bet=stake, message="Good luck!",
                                  spin_seed=rng.randrange(1 << 16)), spinning, send=first)
             for stopped in (2, 4):
@@ -256,16 +285,18 @@ class Slots(commands.Cog):
             if payout >= cap:
                 lines.append(f"🏆 **Maximum win reached: {E.MAX_WIN:,}x!**")
             lines.append("")
-            lines.append(result_line(stake, payout, bal))
+            if mode != "spin":
+                lines.append(f"Bonus buy: paid {fmt(paid)} ({E.BUY_PRICE:g}x your bet of {fmt(stake)}).")
+            lines.append(result_line(paid, payout, bal))
             if played:
                 msg = f"FREE SPINS WON {payout - base_won:,}" if payout > base_won else "No free spin wins"
                 frame = frame_for(rnd.free[played - 1], stake, payout, message=msg, free=(played, played))
             else:
                 frame = frame_for(base, stake, payout, message=spin_message(stake, base))
             view.set_busy(False)
-            await show(frame, "\n".join(lines), color=result_color(stake, payout))
-            log.info("slots: user %s bet %s, %d line wins, %d free spins, paid %s", user.id, f"{stake:,}",
-                     len(base.wins), played, f"{payout:,}")
+            await show(frame, "\n".join(lines), color=result_color(paid, payout))
+            log.info("slots: user %s %s bet %s (paid %s), %d line wins, %d free spins, won %s", user.id, mode,
+                     f"{stake:,}", f"{paid:,}", len(base.wins), played, f"{payout:,}")
         except Exception:
             # Never leave the bet in limbo. If the spin never appeared, the error handler refunds it
             # (refund_unposted); once it was on screen, the round was decided up front, so pay its full result.

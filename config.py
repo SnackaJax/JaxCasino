@@ -47,8 +47,12 @@ HOUSE_EDGE = min(max(_float("HOUSE_EDGE", 0.02), 0.0), 0.5)
 POKER_RAKE = min(max(_float("POKER_RAKE", 0.0), 0.0), 0.5)
 # Average share of bets the Cosmic Lab slot pays back (0.99 = 99%). Separate from HOUSE_EDGE.
 SLOTS_RTP = min(max(_float("SLOTS_RTP", 0.99), 0.5), 1.2)
+# SLOTS_BUYS=0 hides Cosmic Lab's bonus buy (the buy option of /slots).
+SLOTS_BUYS = os.getenv("SLOTS_BUYS", "1").strip().lower() not in ("0", "false", "no", "off")
 # Average share of bets the Banger Bash slot pays back (chat command and Activity alike).
 BANGER_RTP = min(max(_float("BANGER_RTP", 0.99), 0.5), 1.2)
+# BANGER_BUYS=0 hides Banger Bash's bonus buys (in the Activity and the chat version).
+BANGER_BUYS = os.getenv("BANGER_BUYS", "1").strip().lower() not in ("0", "false", "no", "off")
 # /bangerbash opens Banger Bash in the Activity. Set to 1 to make it play in the text channel instead (the older
 # chat version, with a bet option), as it did before.
 BANGERBASH_IN_CHAT = os.getenv("BANGERBASH_IN_CHAT", "0").strip().lower() in ("1", "true", "yes", "on")
@@ -56,6 +60,8 @@ BANGERBASH_IN_CHAT = os.getenv("BANGERBASH_IN_CHAT", "0").strip().lower() in ("1
 # and /casino until it's switched on. REEF_RTP is its average payback (0.99 = 99%).
 REEF_RUSH_ENABLED = os.getenv("REEF_RUSH_ENABLED", "0").strip().lower() in ("1", "true", "yes", "on")
 REEF_RTP = min(max(_float("REEF_RTP", 0.99), 0.5), 1.2)
+# REEF_BUYS=0 hides Reef Rush's bonus buys.
+REEF_BUYS = os.getenv("REEF_BUYS", "1").strip().lower() not in ("0", "false", "no", "off")
 # Raccoon Heist (the 8x8 vault raid slot in the Activity): off until RACCOON_HEIST_ENABLED=1, like Reef Rush.
 # HEIST_RTP is its average payback (0.99 = 99%), for paid spins and every bonus buy alike. HEIST_BUYS=0 hides the
 # bonus buys.

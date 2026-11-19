@@ -1,5 +1,5 @@
 """Cosmic Lab: a 6-reel, 4-row video slot with 20 fixed paylines, wilds, scatters and free spins with
-sticky wilds. Pure game logic, no Discord code, so it can be simulated (see tools/simulate_slots.py).
+sticky wilds. Pure game logic, no Discord code, so it can be simulated (`python -m utils.slot_engine`).
 
 - Every cell is drawn independently from its reel's symbol weights.
 - Line wins pay left to right from reel 1, for 3 to 6 matching symbols in a row. Pays are in line bets;
@@ -62,6 +62,17 @@ LINES = len(PAYLINES)
 FREE_SPINS = {3: 8, 4: 10, 5: 12, 6: 15}  # comets -> spins (6 or more gives 15)
 RETRIGGER_SPINS = 5
 MAX_FREE_SPINS = 50   # a single feature never runs longer than this
+
+# The bonus buy: a spin that is sure to land BUY_COMETS comets (so FREE_SPINS[3] free spins). It pays at the paid
+# spin's scale, like everything else, so its price sets its payback: SLOTS_RTP / MEASURED_RTP x raw value / price.
+# Raw value (in total bets, retriggers and the win cap included), measured with `python -m utils.slot_engine buy`
+# over 4 million rounds: 40.843 ± 0.054 (95%). At 41.5x the bet it pays back 98.6% (98.5-98.8%) at SLOTS_RTP 99%;
+# a paid spin pays back 99%. Re-measure after changing the reels, the pays or the free spins.
+BUY_COMETS = 3
+BUY_PRICE = 41.5
+BUY_VALUE = 40.843    # raw value of the buy, in total bets
+BUY_NAME = "Free Spins"
+BUY_TEXT = f"One spin that is sure to land {BUY_COMETS} comets: {FREE_SPINS[BUY_COMETS]} free spins with sticky wilds"
 MAX_WIN = 2500        # times the total bet
 # Payback of the paytable above, measured over 10 million full rounds (base spin + free spins + cap).
 # The bot scales every pay by SLOTS_RTP / MEASURED_RTP, so the game returns SLOTS_RTP (set in .env).
@@ -136,9 +147,11 @@ def comet_count(rng) -> int:
     return 0
 
 
-def random_grid(rng, sticky: set[tuple[int, int]] = frozenset(), free: bool = False) -> Grid:
+def random_grid(rng, sticky: set[tuple[int, int]] = frozenset(), free: bool = False,
+                comets: int | None = None) -> Grid:
+    """comets: exactly this many comets land (a bonus buy); None draws how many from COMET_ODDS."""
     grid = [[WILD if (r, row) in sticky else _draw(rng, r, free) for row in range(ROWS)] for r in range(REELS)]
-    k = comet_count(rng)
+    k = comet_count(rng) if comets is None else comets
     if k:
         open_cells = [(r, row) for r in range(REELS) for row in range(ROWS) if (r, row) not in sticky]
         for r, row in rng.sample(open_cells, min(k, len(open_cells))):
@@ -165,8 +178,9 @@ def evaluate(grid: Grid, sticky: set[tuple[int, int]] = frozenset()) -> SpinResu
     return SpinResult(grid, wins, scatters, set(sticky))
 
 
-def spin(rng, sticky: set[tuple[int, int]] = frozenset(), free: bool = False) -> SpinResult:
-    return evaluate(random_grid(rng, sticky, free), sticky)
+def spin(rng, sticky: set[tuple[int, int]] = frozenset(), free: bool = False,
+         comets: int | None = None) -> SpinResult:
+    return evaluate(random_grid(rng, sticky, free, comets), sticky)
 
 
 def wilds_in(grid: Grid) -> set[tuple[int, int]]:
@@ -189,8 +203,9 @@ class Round:
         return self.base.pay + sum(s.pay for s in self.free)
 
 
-def play_round(rng) -> Round:
-    base = spin(rng)
+def play_round(rng, mode: str = "spin") -> Round:
+    """A paid spin, or a bonus buy (mode "free": the spin is sure to land BUY_COMETS comets)."""
+    base = spin(rng, comets=BUY_COMETS if mode == "free" else None)
     rnd = Round(base)
     left = free_spins_for(len(base.scatters))
     played = 0
@@ -207,6 +222,60 @@ def play_round(rng) -> Round:
     return rnd
 
 
+def buy_rtp(rtp: float) -> float:
+    """What the bonus buy pays back on average (0.99 = 99%) when paid spins are set to `rtp`."""
+    return rtp / MEASURED_RTP * BUY_VALUE / BUY_PRICE
+
+
 def capped_multiplier(line_bets: float) -> float:
     """Converts a pay in line bets to a multiple of the total bet, applying the win cap."""
     return min(line_bets / LINES, MAX_WIN)
+
+
+# ------------------------------------------------------------------ simulation
+def _sim_chunk(args) -> tuple[int, float, float, int]:
+    import random
+    seed, n, mode = args
+    rng = random.Random(seed)
+    total = sq = 0.0
+    capped = 0
+    for _ in range(n):
+        x = capped_multiplier(play_round(rng, mode).pay)
+        total += x
+        sq += x * x
+        capped += x >= MAX_WIN
+    return n, total, sq, capped
+
+
+def _simulate(n: int, mode: str) -> None:
+    import math
+    import os
+    import random
+    import time
+    from multiprocessing import Pool
+    t0 = time.time()
+    workers = os.cpu_count() or 4
+    chunks = 4 * workers
+    with Pool(workers) as pool:
+        parts = pool.map(_sim_chunk, [(random.getrandbits(64), max(1, n // chunks), mode) for _ in range(chunks)])
+    n = sum(p[0] for p in parts)
+    mean = sum(p[1] for p in parts) / n
+    sd = math.sqrt(max(sum(p[2] for p in parts) / n - mean * mean, 0))
+    ci = 1.96 * sd / math.sqrt(n)
+    scale = 0.99 / MEASURED_RTP
+    print(f"[{mode}] {n:,} rounds in {time.time() - t0:.0f}s: raw {mean:.4f} ± {ci:.4f} (95%), "
+          f"capped {sum(p[3] for p in parts)}")
+    if mode != "spin":
+        print(f"  price {BUY_PRICE:g}x: pays back {mean * scale / BUY_PRICE:.2%} ({(mean - ci) * scale / BUY_PRICE:.2%}-"
+              f"{(mean + ci) * scale / BUY_PRICE:.2%}) at SLOTS_RTP 99%; break-even (99%) price "
+              f"{mean * scale / 0.99:.3f}x")
+
+
+if __name__ == "__main__":
+    # python -m utils.slot_engine [rounds]          paid spins (raw payback, for MEASURED_RTP)
+    # python -m utils.slot_engine buy [rounds]      the bonus buy (its raw value and payback)
+    import sys
+    if len(sys.argv) > 1 and sys.argv[1] == "buy":
+        _simulate(int(sys.argv[2]) if len(sys.argv) > 2 else 1_000_000, "free")
+    else:
+        _simulate(int(sys.argv[1]) if len(sys.argv) > 1 else 2_000_000, "spin")

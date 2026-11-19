@@ -74,6 +74,7 @@ class Wager:
         self.payout = 0
         self.balance_after: int | None = None
         self.channel = None  # where to offer a restart if this game leaves the player broke
+        self.bet = stake     # the bet the game's pays are multiples of (a bonus buy's stake is its price x this)
 
     @classmethod
     async def create(cls, db, guild_id: int, user_id: int, amount: int, game: str,
@@ -118,8 +119,11 @@ class Wager:
         return await self.settle(self.stake, record=False)
 
 
-async def take_bet(interaction: discord.Interaction, raw: str, game: str) -> Wager | None:
-    """Validates and takes a bet from the user. Sends an error and returns None if it fails."""
+async def take_bet(interaction: discord.Interaction, raw: str, game: str, price: float = 1,
+                   what: str = "") -> Wager | None:
+    """Validates and takes a bet from the user. Sends an error and returns None if it fails.
+    price: a bonus buy costs this many times the bet (rounded up); `half` and `all` then mean the biggest bet the
+    player can buy it at. `what` names the buy in the error. The bet itself is kept as `wager.bet`."""
     db = interaction.client.db
     gid, uid = interaction.guild_id, interaction.user.id
     balance = await db.get_balance(gid, uid)
@@ -128,7 +132,7 @@ async def take_bet(interaction: discord.Interaction, raw: str, game: str) -> Wag
         await send_panel(interaction)
         return None
     try:
-        amount = parse_amount(raw, balance)
+        amount = parse_amount(raw, balance if price == 1 else int(balance / price))
     except BetError as e:
         await send_error(interaction, str(e))
         return None
@@ -138,10 +142,16 @@ async def take_bet(interaction: discord.Interaction, raw: str, game: str) -> Wag
     if config.MAX_BET and amount > config.MAX_BET:
         await send_error(interaction, f"The maximum bet is {fmt(config.MAX_BET)}.")
         return None
-    wager = await Wager.create(db, gid, uid, amount, game, channel=interaction.channel)
+    stake = amount if price == 1 else math.ceil(amount * price - 1e-9)
+    wager = await Wager.create(db, gid, uid, stake, game, channel=interaction.channel)
     if wager is None:
-        await send_error(interaction, f"You can't afford that. Your balance is {fmt(balance)}.")
+        if price == 1:
+            await send_error(interaction, f"You can't afford that. Your balance is {fmt(balance)}.")
+        else:
+            await send_error(interaction, f"You can't afford that: {what or 'the buy'} at a bet of {fmt(amount)} costs "
+                                          f"{fmt(stake)} ({price:g}x). Your balance is {fmt(balance)}.")
     else:
+        wager.bet = amount
         interaction.extras.setdefault(UNPOSTED, []).append(wager)
     return wager
 

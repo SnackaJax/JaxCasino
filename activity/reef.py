@@ -10,7 +10,8 @@ players see the player as still spinning, so the result isn't spoiled.
 
 Websocket /ws/reef. The page sends:
   {"type": "join", "session", "instance_id", "guild_id"}      first message
-  {"type": "spin", "bet": int}                               a paid spin
+  {"type": "spin", "bet": int, "mode": "spin"|<buy>}         a paid spin or a bonus buy (a buy costs its price x
+                                                             the bet, see E.BUYS)
   {"type": "announce", "round": int, "what": "kraken"|"win"} the page has shown the Kraken or a big win;
                                                              the server checks it and tells the other players
   {"type": "shown", "round": int}                            the page has finished showing a round
@@ -116,9 +117,12 @@ class Table:
         kind = msg.get("type")
         if kind == "spin":
             bet = msg.get("bet")
+            mode = msg.get("mode", "spin")
             if not isinstance(bet, int) or isinstance(bet, bool):
                 raise Rejected("Invalid bet.")
-            await self.spin(p, bet)
+            if mode not in E.MODES:
+                raise Rejected("Unknown buy.")
+            await self.spin(p, bet, mode)
         elif kind == "announce":
             await self.announce(p, msg.get("round"), msg.get("what"))
         elif kind == "shown":
@@ -133,19 +137,23 @@ class Table:
         if p.settled:
             p.last_win, p.last_x = p.settled["payout"], p.settled["x"]
 
-    async def spin(self, p: ReefPlayer, bet: int) -> None:
+    async def spin(self, p: ReefPlayer, bet: int, mode: str = "spin") -> None:
         s = self.hub.server.settings
         if bet < s.min_bet:
             raise Rejected(f"The minimum bet is {s.min_bet:,}.")
         if s.max_bet and bet > s.max_bet:
             raise Rejected(f"The maximum bet is {s.max_bet:,}.")
+        if mode != "spin" and not config.REEF_BUYS:
+            raise Rejected("Bonus buys are switched off on this server.")
+        stake = E.stake_for(bet, mode)
         async with p.lock:
-            wager = await Wager.create(self.db, self.guild_id, p.user_id, bet, GAME)
+            wager = await Wager.create(self.db, self.guild_id, p.user_id, stake, GAME)
             if wager is None:
-                raise Rejected("You don't have enough credits for that.")
+                raise Rejected("You don't have enough credits for that." if mode == "spin" else
+                               f"You don't have enough credits for that: {E.BUYS[mode]['name']} costs {stake:,}.")
             try:
-                rnd = E.Round(rng)
-                pay = E.payout(wager.stake, rnd, self.hub.rtp)
+                rnd = E.Round(rng, mode)
+                pay = E.payout(wager.stake, rnd, self.hub.rtp, bet)
             except Exception:
                 await wager.refund()   # never keep a stake the game couldn't play
                 raise
@@ -153,15 +161,15 @@ class Table:
             if p.presenting:
                 self.done_presenting(p)       # spun again before the last one finished showing
             p.round_id += 1
-            p.settled = {"round": p.round_id, "stake": wager.stake, "payout": pay, "x": pay / wager.stake,
+            p.settled = {"round": p.round_id, "stake": wager.stake, "payout": pay, "x": pay / bet,
                          "kraken": rnd.kraken_landed}
             p.presenting = time.time()
-            await self.to_player(p, {"type": "round", "round": {"id": p.round_id, "stake": wager.stake,
+            await self.to_player(p, {"type": "round", "round": {"id": p.round_id, "bet": bet, "stake": wager.stake,
                                                                  "payout": pay, **rnd.to_dict()},
                                      "balance": balance})
-        log.info("Reef Rush (Activity): user %s bet %s, %s cascades, surge %s, kraken %s, paid %s", p.user_id,
-                 f"{wager.stake:,}", rnd.cascades, rnd.surge or "-", "yes" if rnd.kraken_landed else "-",
-                 f"{pay:,}")
+        log.info("Reef Rush (Activity): user %s %s bet %s (paid %s), %s cascades, surge %s, kraken %s, won %s",
+                 p.user_id, mode, f"{bet:,}", f"{wager.stake:,}", rnd.cascades, rnd.surge or "-",
+                 "yes" if rnd.kraken_landed else "-", f"{pay:,}")
         await self.push_players()
 
     async def announce(self, p: ReefPlayer, round_id, what) -> None:
@@ -254,6 +262,8 @@ class ReefHub:
             "low": E.LOW, "high": E.HIGH, "names": E.NAMES,
             "surges": {k: {"name": E.SURGE_NAMES[k], "text": E.SURGE_TEXT[k]} for k in E.SURGES},
             "surge_at": E.SURGE_AT, "kraken_at": E.KRAKEN_AT, "pearl_size": E.PEARL_SIZE,
+            "buys": ({k: {**v, "price": E.PRICES[k], "meter": E.BUY_METER[k], "rtp": E.buy_rtp(k, self.rtp)}
+                      for k, v in E.BUYS.items()} if config.REEF_BUYS else {}),
             "scale": scale, "rtp": self.rtp, "max_win": E.MAX_WIN, "min_bet": s.min_bet, "max_bet": s.max_bet,
             "restart_amount": config.RESTART_AMOUNT, "restart_presses": max(1, config.RESTART_PRESSES),
             "big_win": BIG_WIN,

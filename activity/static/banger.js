@@ -102,13 +102,13 @@ function resolveWaiter(kind, value) {
 function onMessage(m) {
   switch (m.type) {
     case 'welcome':
-      W = m; myId = m.you; setupInfo(); fitBet(); renderBet();
+      W = m; myId = m.you; setupInfo(); setupBuys(); fitBet(); renderBet();
       $('loading').classList.add('hidden');
       break;
     case 'me':
       balance = m.balance;
       if (!busy || shownBalance === null) setShownBalance(balance);
-      renderBroke();
+      renderBroke(); renderBuys();
       break;
     case 'round':
       balance = m.balance;
@@ -177,6 +177,7 @@ function setBusy(v) {
   busy = v;
   $('spinBtn').classList.toggle('busy', v);
   $('betUp').disabled = v; $('betDown').disabled = v;
+  $('buyBtn').disabled = v;
   renderBroke();
 }
 
@@ -201,6 +202,7 @@ function fitBet() {
 function renderBet() {
   $('bet').textContent = fmt(bet);
   try { localStorage.setItem('banger-bet', String(bet)); } catch (e) { /* storage blocked */ }
+  renderBuys();
 }
 function stepBet(dir) {
   if (busy) return;
@@ -217,7 +219,7 @@ $('spinBtn').addEventListener('click', () => {
   doSpin();
 });
 document.addEventListener('keydown', (e) => {
-  if (e.code === 'Space' && !e.repeat && $('infoModal').classList.contains('hidden')) {
+  if (e.code === 'Space' && !e.repeat && $('infoModal').classList.contains('hidden') && $('buyModal').classList.contains('hidden')) {
     e.preventDefault();
     $('spinBtn').click();
   }
@@ -327,6 +329,10 @@ function setupInfo() {
     <p><b>Turn up the heat:</b> before playing, you can gamble up to ${W.max_gambles} times. Win and your feature climbs a
     rung; lose and it drops one (from Hot Potato, the bonus burns). The odds are set so a gamble is worth exactly what you
     risk, on average.</p>
+    ${Object.keys(W.buys).length ? `<h3>Bonus buys</h3>
+    <p>BUY skips the wait: one spin that is sure to land the grills, straight into the Grill Bonus (turning up the heat
+    works as usual). ${Object.values(W.buys).map((b) => `<b>${esc(b.name)}</b> (${b.grills} grills) costs ${b.price}x your bet and
+    pays back ${(b.rtp * 100).toFixed(1)}%.`).join(' ')}</p>` : ''}
     <h3>Everyone at the barbecue</h3>
     <p>Everybody plays their own machine. Everyone in this server with Banger Bash open is at the same barbecue, whether they
     started it in a voice call or with /bangerbash in a text channel. The panel on the right shows what the others are doing,
@@ -335,6 +341,47 @@ function setupInfo() {
     Space bar spins. Turbo speeds up the animations; Auto keeps spinning until you stop it or a bonus starts.</p>`;
 }
 $('infoBtn').addEventListener('click', () => { sfx.click(); $('infoModal').classList.remove('hidden'); });
+
+// ------------------------------------------------------------------ bonus buys
+// a buy never costs less than its price: rounded up, like the server does
+const stakeFor = (mode) => Math.max(1, Math.ceil(bet * (mode === 'spin' ? 1 : W.buys[mode].price) - 1e-9));
+function setupBuys() {
+  const has = W && Object.keys(W.buys || {}).length > 0;
+  $('buyBtn').classList.toggle('hidden', !has);
+  if (!has) return;
+  $('buys').innerHTML = Object.entries(W.buys).map(([k, b]) => `<button class="buy" data-mode="${k}">
+    <div class="b-icons">${'<img src="/static/banger/grill.png" alt="">'.repeat(b.grills)}</div>
+    <div class="b-name">${esc(b.name)}</div><div class="b-text">${esc(b.text)}</div>
+    <div class="b-price" id="price-${k}"></div><div class="b-x">${b.price}× bet</div></button>`).join('');
+  for (const el of $('buys').querySelectorAll('.buy')) {
+    el.addEventListener('click', () => {
+      unlock(); sfx.click();
+      $('buyModal').classList.add('hidden');
+      doSpin(el.dataset.mode);
+    });
+  }
+  renderBuys();
+}
+function renderBuys() {
+  if (!W || !Object.keys(W.buys || {}).length) return;
+  $('buyBet').textContent = fmt(bet);
+  for (const k of Object.keys(W.buys)) {
+    const el = $(`price-${k}`);
+    if (!el) continue;
+    const cost = stakeFor(k);
+    el.textContent = fmt(cost);
+    el.parentElement.disabled = cost > balance;
+  }
+}
+$('buyBtn').addEventListener('click', () => {
+  unlock(); sfx.click();
+  if (busy) return;
+  if (autoOn) setAuto(false);
+  renderBuys();
+  $('buyModal').classList.remove('hidden');
+});
+$('buyClose').addEventListener('click', () => $('buyModal').classList.add('hidden'));
+$('buyModal').addEventListener('click', (e) => { if (e.target === $('buyModal')) $('buyModal').classList.add('hidden'); });
 $('infoClose').addEventListener('click', () => $('infoModal').classList.add('hidden'));
 $('infoModal').addEventListener('click', (e) => { if (e.target === $('infoModal')) $('infoModal').classList.add('hidden'); });
 
@@ -704,23 +751,26 @@ let skipRequested = false;
 let cycleTimer = null;
 function stopCycle() { if (cycleTimer) { clearInterval(cycleTimer); cycleTimer = null; } }
 
-async function doSpin() {
+async function doSpin(mode = 'spin') {
   if (busy || !W) return;
-  if (bet > balance) {
-    toast(balance < W.min_bet ? "You're out of credits." : "You don't have enough credits for that bet.");
+  const cost = stakeFor(mode);
+  if (cost > balance) {
+    toast(balance < W.min_bet ? "You're out of credits."
+      : mode === 'spin' ? "You don't have enough credits for that bet."
+        : `You don't have enough credits for that: ${W.buys[mode].name} costs ${fmt(cost)}.`);
     sfx.error(); setAuto(false); return;
   }
   const token = ++flow;
   setBusy(true);
   skipRequested = false;
   stopCycle(); clearEffects(); hideScenes();
-  setWinText('Good luck!');
-  setShownBalance((shownBalance ?? balance) - bet);
+  setWinText(mode === 'spin' ? 'Good luck!' : `${W.buys[mode].name}!`);
+  setShownBalance((shownBalance ?? balance) - cost);
   sfx.spinStart();
   const startedAt = performance.now();
   startReels();
   const answer = waitFor('round');
-  if (!send({ type: 'spin', bet })) resolveWaiter('round', null);
+  if (!send({ type: 'spin', bet, mode })) resolveWaiter('round', null);
   const m = await answer;
   if (token !== flow) return;
   if (!m) {   // refused (not enough credits, …): put the reels back
@@ -761,7 +811,7 @@ async function resumeRound(round) {
 
 async function playRound(round, token, startedAt, resumed = false) {
   const spin = round.spin;
-  const stake = round.stake;
+  const stake = round.bet ?? round.stake;   // pays are multiples of the bet (a buy's stake is its price)
   const pre = { charcoal: ['EXTRA CHARCOAL!', 'At least 2 grills are coming'], sure: ['SURE SIZZLE!', 'This spin is going to win'], mega: ['MEGA BANGER!', 'Something big is coming'] }[spin.feature];
   if (!resumed) {
     if (pre) { sfx.feature(spin.feature); banner(pre[0], pre[1], 1200); }
@@ -934,7 +984,7 @@ async function finishRound(round, token) {
   guard(token);
   if (!s) { abortFlow(); return; }
   settled.delete(round.id);
-  const stake = round.stake;
+  const stake = round.bet ?? round.stake;   // pays are multiples of the bet (a buy's stake is its price)
   if (s.payout > 0 && s.x >= W.big_win) {
     await bigWin(s.payout, s.x, token);
     send({ type: 'announce', round: round.id, what: 'win' });
@@ -946,7 +996,7 @@ async function finishRound(round, token) {
   setBusy(false);
   if (autoOn) {
     await sleep(T(s.payout > stake ? 700 : 300));
-    if (autoOn && !busy && token === flow) doSpin();
+    if (autoOn && !busy && token === flow) doSpin('spin');
   }
 }
 
@@ -974,7 +1024,7 @@ const tierName = (i) => W.tiers[i].name;
 
 async function playBonus(round, token, baseWon, resumed) {
   let b = round.bonus;
-  const stake = round.stake;
+  const stake = round.bet ?? round.stake;   // pays are multiples of the bet (a buy's stake is its price)
   // The bonus is on screen from here on: let the server show it in the player list and announce it. (Until now
   // the others just see this player spinning. Sent again after a reconnect; the server announces only once.)
   send({ type: 'announce', round: round.id, what: 'bonus' });
@@ -1115,7 +1165,7 @@ function toastScene(text) { $('ladderNote').textContent = text; }
 
 // ---- Hot Potato
 async function playPotato(round, b, token) {
-  const stake = round.stake;
+  const stake = round.bet ?? round.stake;   // pays are multiples of the bet (a buy's stake is its price)
   let f = b.feature;
   $('potatoScene').classList.remove('hidden');
   $('potatoTotal').textContent = `TOTAL ${fmt(credits(stake, f.total))}`;
@@ -1180,7 +1230,7 @@ function burstAt(el, colors) {
 
 // ---- Picnic Pick
 async function playPicnic(round, b, token) {
-  const stake = round.stake;
+  const stake = round.bet ?? round.stake;   // pays are multiples of the bet (a buy's stake is its price)
   let f = b.feature;
   $('picnicScene').classList.remove('hidden');
   drawHampers(f, stake, null);
@@ -1225,7 +1275,7 @@ function drawHampers(f, stake, last) {
 
 // ---- Golden Grill
 async function playGolden(round, f, token) {
-  const stake = round.stake;
+  const stake = round.bet ?? round.stake;   // pays are multiples of the bet (a buy's stake is its price)
   $('goldenScene').classList.remove('hidden');
   const g = $('goldenScene').querySelector('.golden');
   g.classList.remove('cool');
@@ -1271,7 +1321,7 @@ function exitFreeMode() {
   $('freeInfo').classList.add('hidden'); $('multInfo').classList.add('hidden');
 }
 async function playFreeSpins(round, f, token, baseWon) {
-  const stake = round.stake;
+  const stake = round.bet ?? round.stake;   // pays are multiples of the bet (a buy's stake is its price)
   const name = f.kind === 'grillspins' ? tierName(2) : tierName(3);
   hideScenes();
   enterFreeMode(name);

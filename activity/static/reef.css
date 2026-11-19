@@ -143,7 +143,8 @@ body.discord-mobile #app { padding-top: max(env(safe-area-inset-top), var(--disc
   padding: 8px 12px 10px; background: linear-gradient(180deg, rgba(0, 10, 20, .2), rgba(0, 10, 20, .6));
   border-top: 1px solid rgba(79, 224, 208, .25); }
 .lbl { font-size: 10px; letter-spacing: 1.5px; color: var(--muted); font-weight: 800; }
-.bet-box { justify-self: end; display: flex; align-items: center; gap: 8px; background: var(--panel); border: 2px solid var(--line);
+.left-box { justify-self: end; display: flex; align-items: center; gap: clamp(6px, 1.4vw, 14px); min-width: 0; }
+.bet-box { display: flex; align-items: center; gap: 8px; background: var(--panel); border: 2px solid var(--line);
   border-radius: 99px; padding: 4px 6px; }
 .bet-val { min-width: 84px; text-align: center; font-weight: 800; font-size: 18px; font-variant-numeric: tabular-nums; }
 .round-btn { width: 36px; height: 36px; border-radius: 50%; border: 2px solid var(--frame); background: var(--panel2);
@@ -210,6 +211,20 @@ body.discord-mobile #app { padding-top: max(env(safe-area-inset-top), var(--disc
 .modal-close { position: absolute; right: 12px; top: 12px; }
 .modal-card p, .modal-card li { font-size: 14px; line-height: 1.5; color: #d8f0f7; }
 .modal-card ul { padding-left: 20px; }
+.buy-btn { font-size: 13px; letter-spacing: 1px; padding: 10px 12px; border-color: var(--kraken); background: linear-gradient(180deg, #4a2a80, #2a1652); color: #f0e6ff; }
+.buy-btn:hover:not(:disabled) { background: linear-gradient(180deg, #5a349c, #331b66); }
+.buy-btn:disabled { opacity: .45; cursor: default; }
+.buy-note { font-size: 13px !important; color: var(--muted) !important; }
+.buys { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr)); gap: 10px; }
+.buy { display: flex; flex-direction: column; align-items: center; gap: 6px; background: var(--panel); border: 2px solid var(--line); border-radius: 14px;
+  padding: 12px 10px; text-align: center; cursor: pointer; color: var(--text); font: inherit; transition: transform .15s, border-color .15s; }
+.buy:hover:not(:disabled) { transform: translateY(-3px); border-color: var(--sand); }
+.buy:disabled { opacity: .45; cursor: default; }
+.buy img { width: 54px; height: 54px; }
+.buy .b-name { font-weight: 800; font-size: 15px; }
+.buy .b-text { font-size: 12px; color: var(--muted); line-height: 1.35; min-height: 32px; }
+.buy .b-price { font-weight: 800; font-size: 16px; color: var(--sand); font-variant-numeric: tabular-nums; }
+.buy .b-x { font-size: 11px; color: var(--muted); }
 .paytable { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 210px), 1fr)); gap: 8px; }
 .pt { display: flex; align-items: center; gap: 8px; background: var(--panel); border-radius: 10px; padding: 6px 8px; min-width: 0; }
 .pt img { width: 48px; height: 48px; flex: none; }
@@ -256,6 +271,8 @@ body.discord-mobile #app { padding-top: max(env(safe-area-inset-top), var(--disc
   #board { border-radius: 10px; }
   .play { padding-left: 8px; padding-right: 8px; }
   .controls { gap: 8px; padding-left: 8px; padding-right: 8px; }
+  .left-box { flex-direction: column-reverse; gap: 4px; align-items: stretch; }
+  .buy-btn { padding: 4px 8px; font-size: 11px; }
   .right-box { flex-direction: column-reverse; gap: 4px; align-items: stretch; }
   .toggles { flex-direction: row; gap: 4px; }
   .toggle { padding: 4px 8px; font-size: 11px; flex: 1; }
@@ -281,7 +298,7 @@ body.discord-mobile #app { padding-top: max(env(safe-area-inset-top), var(--disc
   .controls { grid-column: 2; grid-row: 2; display: flex; flex-direction: column; justify-content: center; gap: 10px;
     padding: 8px 10px; border-top: none; border-left: 1px solid rgba(79, 224, 208, .25);
     background: linear-gradient(90deg, rgba(0, 10, 20, .2), rgba(0, 10, 20, .6)); }
-  .bet-box { justify-self: auto; }
+  .left-box { justify-self: auto; flex-direction: column; }
   .right-box { flex-direction: column; gap: 6px; justify-self: auto; }
   .last-win { min-width: 0; }
   .broke { position: fixed; bottom: 0; left: 0; right: 0; }

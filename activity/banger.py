@@ -7,7 +7,8 @@ The server decides every result; the page only animates what it is sent.
 
 Websocket /ws/banger. The page sends:
   {"type": "join", "session", "instance_id", "guild_id"}      first message
-  {"type": "spin", "bet": int}                               a paid spin (one round at a time)
+  {"type": "spin", "bet": int, "mode": "spin"|<buy>}         a paid spin or a bonus buy (one round at a time; a
+                                                             buy costs its price x the bet, see E.BUYS)
   {"type": "gamble"} / {"type": "take"}                      Grill Bonus: turn up the heat / play the feature
   {"type": "pick", "index": int}                             Hot Potato (0-2) and Picnic Pick (0-14) picks
   {"type": "announce", "round": int, "what": "bonus"|"win"}  the page has shown a bonus trigger or a big win;
@@ -64,6 +65,7 @@ class SlotPlayer:
     sockets: set = field(default_factory=set)
     round: E.Round | None = None
     round_id: int = 0
+    bet: int = 0                         # the bet of the round being played (a buy's stake is its price x this)
     wager: Wager | None = None
     last_action: float = field(default_factory=time.time)
     last_win: int = 0
@@ -152,16 +154,20 @@ class Table:
 
     def round_view(self, p: SlotPlayer) -> dict:
         r = p.round
-        return {"id": p.round_id, "stake": p.wager.stake if p.wager else 0, "spin": r.spin.to_dict(),
+        return {"id": p.round_id, "bet": p.bet, "stake": p.wager.stake if p.wager else 0, "mode": r.mode,
+                "spin": r.spin.to_dict(),
                 "bonus": r.bonus.to_dict() if r.bonus else None, "done": r.done}
 
     async def handle(self, p: SlotPlayer, msg: dict) -> None:
         kind = msg.get("type")
         if kind == "spin":
             bet = msg.get("bet")
+            mode = msg.get("mode", "spin")
             if not isinstance(bet, int) or isinstance(bet, bool):
                 raise Rejected("Invalid bet.")
-            await self.spin(p, bet)
+            if mode not in E.MODES:
+                raise Rejected("Unknown buy.")
+            await self.spin(p, bet, mode)
         elif kind in ("gamble", "take", "pick"):
             await self.choose(p, kind, msg.get("index"))
         elif kind == "announce":
@@ -173,20 +179,30 @@ class Table:
         elif kind == "restart":
             await self.restart(p)
 
-    async def spin(self, p: SlotPlayer, bet: int) -> None:
+    async def spin(self, p: SlotPlayer, bet: int, mode: str = "spin") -> None:
         s = self.hub.server.settings
         if bet < s.min_bet:
             raise Rejected(f"The minimum bet is {s.min_bet:,}.")
         if s.max_bet and bet > s.max_bet:
             raise Rejected(f"The maximum bet is {s.max_bet:,}.")
+        if mode != "spin" and not config.BANGER_BUYS:
+            raise Rejected("Bonus buys are switched off on this server.")
+        stake = E.stake_for(bet, mode)
         async with p.lock:
             if p.round is not None:
                 raise Rejected("Finish this round first.")
-            wager = await Wager.create(self.db, self.guild_id, p.user_id, bet, GAME)
+            wager = await Wager.create(self.db, self.guild_id, p.user_id, stake, GAME)
             if wager is None:
-                raise Rejected("You don't have enough credits for that.")
+                raise Rejected("You don't have enough credits for that." if mode == "spin" else
+                               f"You don't have enough credits for that: {E.BUYS[mode]['name']} costs {stake:,}.")
             p.wager = wager
-            p.round = E.Round(rng)
+            p.bet = bet
+            try:
+                p.round = E.Round(rng, mode)
+            except Exception:
+                p.wager = None
+                await wager.refund()   # never keep a stake the game couldn't play
+                raise
             p.round_id += 1
             p.last_action = time.time()
             view = self.round_view(p)
@@ -236,17 +252,18 @@ class Table:
         b = r.bonus
         p.presenting = (p.status, E.TIERS[b.tier] if b and not b.lost else None, p.round_id, time.time())
         r.finish(rng)
-        pay = E.payout(wager.stake, r, self.rtp())
+        bet = p.bet or wager.stake
+        pay = E.payout(wager.stake, r, self.rtp(), bet)
         balance = await wager.settle(pay)
-        p.settled = {"round": p.round_id, "stake": wager.stake, "payout": pay, "x": pay / wager.stake,
+        p.settled = {"round": p.round_id, "stake": wager.stake, "payout": pay, "x": pay / bet, "mode": r.mode,
                      "bonus": (None if r.bonus is None else "burnt" if r.bonus.lost else E.TIERS[r.bonus.tier])}
-        p.last_win, p.last_x = pay, pay / wager.stake
+        p.last_win, p.last_x = pay, pay / bet
         p.round = None
         p.wager = None
         await self.to_player(p, {"type": "settled", "round": p.settled["round"], "payout": pay, "balance": balance,
                                  "x": p.settled["x"]})
-        log.info("Banger Bash (Activity): user %s bet %s, feature %s, bonus %s, paid %s", p.user_id,
-                 f"{wager.stake:,}", r.spin.feature or "-", p.settled["bonus"] or "-", f"{pay:,}")
+        log.info("Banger Bash (Activity): user %s %s bet %s (paid %s), feature %s, bonus %s, won %s", p.user_id,
+                 r.mode, f"{bet:,}", f"{wager.stake:,}", r.spin.feature or "-", p.settled["bonus"] or "-", f"{pay:,}")
 
     async def finish_idle(self, p: SlotPlayer) -> None:
         async with p.lock:
@@ -266,7 +283,9 @@ class Table:
             return
         item = None
         if what == "bonus" and p.round is not None and p.round_id == round_id and p.round.bonus:
-            item = {"kind": "bonus", "text": f"lit the Grill Bonus with {p.round.bonus.grills} grills!"}
+            text = (f"lit the Grill Bonus with {p.round.bonus.grills} grills!" if p.round.mode == "spin"
+                    else f"bought the {E.BUYS[p.round.mode]['name']}!")
+            item = {"kind": "bonus", "text": text}
         elif what == "win" and p.settled and p.settled["round"] == round_id and p.settled["x"] >= BIG_WIN:
             s = p.settled
             label = "EPIC WIN" if s["x"] >= 50 else "MEGA WIN" if s["x"] >= 20 else "BIG WIN"
@@ -368,6 +387,8 @@ class BangerHub:
             "potato_rounds": E.POTATO_ROUNDS, "picnic_cells": E.PICNIC_CELLS, "picnic_ants": E.PICNIC_ANTS,
             "free_spins": E.FREE_SPINS, "retrigger": E.RETRIGGER_SPINS, "golden_max": E.GOLDEN_MAX,
             "max_gambles": E.MAX_GAMBLES, "feature_chance": E.FEATURE_CHANCE,
+            "buys": ({k: {"name": v["name"], "text": v["text"], "grills": v["grills"], "price": E.PRICES[k],
+                          "rtp": E.buy_rtp(k, self.rtp)} for k, v in E.BUYS.items()} if config.BANGER_BUYS else {}),
             "scale": scale, "rtp": self.rtp, "max_win": E.MAX_WIN, "min_bet": s.min_bet, "max_bet": s.max_bet,
             "restart_amount": config.RESTART_AMOUNT, "restart_presses": max(1, config.RESTART_PRESSES),
             "big_win": BIG_WIN,

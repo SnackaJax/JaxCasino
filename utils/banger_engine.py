@@ -4,6 +4,7 @@ Grill Bonus. Pure game logic, no Discord or web code, so the chat command (cogs/
 
     python -m utils.banger_engine            # measures the payback and prints the stats (takes a minute)
     python -m utils.banger_engine features   # measures each bonus feature's average value
+    python -m utils.banger_engine buys       # plays whole bonus buys through payout() and prints their payback
 
 How a spin works
 - Every cell is drawn independently from its reel's symbol weights. Wilds never land on reel 1.
@@ -91,15 +92,36 @@ TIER_TEXT = {
 AWARD_WEIGHTS = {3: (34, 28, 20, 12, 6), 4: (0, 40, 30, 20, 10), 5: (0, 0, 45, 35, 20)}
 MAX_GAMBLES = 5
 
-# Average value of each feature in x (before the RTP scale), measured with `python -m utils.banger_engine
-# features`. The gamble odds come from these, so re-measure them after changing a feature.
-FEATURE_EV = {"potato": 10.7, "picnic": 20.2, "grillspins": 32.6, "twinlinks": 45.4, "golden": 72.5}
+# Average value of each feature in x (before the RTP scale). The gamble odds come from these, so re-measure them after
+# changing a feature. Hot Potato (10.732), Picnic Pick (20.16) and Golden Grill (72.547) are exact; Grill Spins
+# (32.62 ± 0.04) and Twin Links (45.33 ± 0.04) are 2.4 million runs each of `python -m utils.banger_engine features`.
+FEATURE_EV = {"potato": 10.73, "picnic": 20.16, "grillspins": 32.62, "twinlinks": 45.33, "golden": 72.55}
 
 MAX_WIN = 5000          # times the total bet
 # Payback of everything above (taking every feature without gambling, random picks): 0.9917 over 6 million
 # rounds, which is within the simulation's noise (about ±0.4%) of 0.99. It is set to 0.99 so that at the default
 # BANGER_RTP of 99% every pay is exactly what the tables say. The bot scales every pay by BANGER_RTP / MEASURED_RTP.
 MEASURED_RTP = 0.99
+
+# The bonus buys: one spin that is sure to land this many grills, so it goes straight to the Grill Wheel (no random
+# feature on that spin). The rest of the round, gambles included, is the same as a paid spin's Grill Bonus.
+BUYS = {
+    "grill": {"name": "Grill Bonus", "grills": 3, "text": "One spin that is sure to land 3 grills: straight to "
+                                                          "the Grill Wheel"},
+    "grill5": {"name": "Big Grill", "grills": 5, "text": "One spin that is sure to land 5 grills: the wheel only "
+                                                         "has Grill Spins, Twin Links and Golden Grill"},
+}
+# Prices in bets. A buy pays at the paid spin's scale, like everything else, so its price sets its payback:
+# payback = BANGER_RTP / MEASURED_RTP x (raw value of the bought round) / price. The raw value is the Grill Wheel's
+# average over FEATURE_EV plus the line wins of the spin that lands the grills (4.8 million spins each). Gambles
+# don't change it (each one is worth the same either way). At BANGER_RTP 99%, with ± the 95% range:
+#   grill   26.1x the bet: raw 25.789 ± 0.010 -> pays back 98.81% (98.77-98.85%)
+#   grill5  45.7x the bet: raw 45.156 ± 0.011 -> pays back 98.81% (98.79-98.83%)
+# A paid spin pays back 99.2% (± 0.4%). `python -m utils.banger_engine buys` plays whole bought rounds through
+# payout() to check. Re-measure after changing a feature, the wheel or the reels.
+PRICES = {"grill": 26.1, "grill5": 45.7}
+BUY_VALUE = {"grill": 25.789, "grill5": 45.156}   # raw value of each buy, in x
+MODES = ("spin", *BUYS)
 
 # 20 paylines: the row (0 = top) used on each reel.
 PAYLINES: list[tuple[int, ...]] = [
@@ -554,10 +576,16 @@ class Bonus:
 
 
 class Round:
-    """One paid spin and, if it lands 3+ grills, its Grill Bonus."""
+    """One paid spin and, if it lands 3+ grills, its Grill Bonus. mode: "spin" (a paid spin) or a bonus buy in
+    BUYS (a spin that is sure to land that many grills)."""
 
-    def __init__(self, rng):
-        self.spin = base_spin(rng)
+    def __init__(self, rng, mode: str = "spin"):
+        self.mode = mode
+        if mode == "spin":
+            self.spin = base_spin(rng)
+        else:
+            grid = random_grid(rng, grill_odds={BUYS[mode]["grills"]: 1.0})
+            self.spin = Spin(grid, grid, evaluate(grid))
         grills = len(self.spin.grills)
         self.bonus = Bonus(rng, grills) if grills >= 3 else None
 
@@ -584,12 +612,30 @@ def scale(rtp: float) -> float:
     return rtp / MEASURED_RTP
 
 
+def price(mode: str) -> float:
+    """What a round in this mode costs, in bets."""
+    return 1 if mode == "spin" else PRICES[mode]
+
+
+def stake_for(bet: int, mode: str) -> int:
+    """What a round in this mode costs, in credits (rounded up, so a buy never costs less than its price)."""
+    return max(1, math.ceil(bet * price(mode) - 1e-9))
+
+
+def buy_rtp(mode: str, rtp: float) -> float:
+    """What a bonus buy pays back on average (0.99 = 99%) when paid spins are set to `rtp`."""
+    return scale(rtp) * BUY_VALUE[mode] / PRICES[mode]
+
+
 def credits(stake: int, x: float, rtp: float) -> int:
+    """`stake` is the bet the pays are multiples of (for a bonus buy: the bet, not the price paid)."""
     return math.floor(stake * x * scale(rtp) + 1e-9)
 
 
-def payout(stake: int, rnd: Round, rtp: float) -> int:
-    return min(credits(stake, rnd.x, rtp), stake * MAX_WIN)
+def payout(stake: int, rnd: Round, rtp: float, bet: int | None = None) -> int:
+    """What a round pays. Pays are multiples of the bet: for a bonus buy, pass the bet (the stake is its price)."""
+    bet = bet or stake
+    return min(credits(bet, rnd.x, rtp), bet * MAX_WIN)
 
 
 # ------------------------------------------------------------------ simulation
@@ -648,8 +694,47 @@ def _features(n: int) -> None:
         print(f'"{kind}": {tot / n:.1f},   # best {best:.0f}x')
 
 
+def _buy_chunk(args) -> tuple[int, int, int, float]:
+    import random
+    seed, n, mode, rtp = args
+    rng = random.Random(seed)
+    bet = 1000
+    stake = stake_for(bet, mode)
+    paid = 0
+    sq = 0.0
+    for _ in range(n):
+        rnd = Round(rng, mode)
+        rnd.finish(rng)
+        pay = payout(stake, rnd, rtp, bet)
+        paid += pay
+        sq += (pay / stake) ** 2
+    return n, n * stake, paid, sq
+
+
+def _buys(n: int, rtp: float = 0.99) -> None:
+    """Plays whole bought rounds (take the feature, random picks) through payout() and prints what each buy pays
+    back."""
+    import os
+    import random
+    from multiprocessing import Pool
+    workers = os.cpu_count() or 4
+    chunks = 4 * workers
+    for mode in BUYS:
+        with Pool(workers) as pool:
+            parts = pool.map(_buy_chunk, [(random.getrandbits(64), max(1, n // chunks), mode, rtp)
+                                          for _ in range(chunks)])
+        rounds = sum(p[0] for p in parts)
+        staked = sum(p[1] for p in parts)
+        mean = sum(p[2] for p in parts) / staked
+        sd = math.sqrt(max(sum(p[3] for p in parts) / rounds - mean * mean, 0))
+        print(f"{mode:7} {rounds:,} rounds at {PRICES[mode]:g}x: pays back {mean:.2%} ± {1.96 * sd / math.sqrt(rounds):.2%} "
+              f"(expected {buy_rtp(mode, rtp):.2%})")
+
+
 if __name__ == "__main__":
-    if len(sys.argv) > 1 and sys.argv[1] == "features":
+    if len(sys.argv) > 1 and sys.argv[1] == "buys":
+        _buys(int(sys.argv[2]) if len(sys.argv) > 2 else 2_000_000)
+    elif len(sys.argv) > 1 and sys.argv[1] == "features":
         _features(int(sys.argv[2]) if len(sys.argv) > 2 else 200_000)
     else:
         _simulate(int(sys.argv[1]) if len(sys.argv) > 1 else 1_000_000)

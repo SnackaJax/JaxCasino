@@ -54,10 +54,13 @@
         <div class="broke-text"><b>You're out of credits.</b> <span id="brokeText"></span></div>
         <button class="btn btn-restart" id="restartBtn">Restart</button>
       </div>
-      <div class="bet-box">
-        <button class="round-btn" id="betDown" aria-label="Lower bet">−</button>
-        <div class="bet-val"><div class="lbl">BET</div><div id="bet">100</div></div>
-        <button class="round-btn" id="betUp" aria-label="Raise bet">+</button>
+      <div class="left-box">
+        <button class="btn buy-btn hidden" id="buyBtn" title="Bonus buys">BUY</button>
+        <div class="bet-box">
+          <button class="round-btn" id="betDown" aria-label="Lower bet">−</button>
+          <div class="bet-val"><div class="lbl">BET</div><div id="bet">100</div></div>
+          <button class="round-btn" id="betUp" aria-label="Raise bet">+</button>
+        </div>
       </div>
       <button class="spin-btn" id="spinBtn" aria-label="Spin"><span>SPIN</span></button>
       <div class="right-box">
@@ -68,6 +71,16 @@
         </div>
       </div>
     </footer>
+  </div>
+
+  <div class="modal hidden" id="buyModal">
+    <div class="modal-card">
+      <button class="icon-btn modal-close" id="buyClose" aria-label="Close">✕</button>
+      <h2>Call the tide</h2>
+      <p class="buy-note">Skip the wait. Prices are for your current bet of <b id="buyBet">0</b>; every buy pays back about
+        the same share of what it costs as a normal spin, and never more.</p>
+      <div class="buys" id="buys"></div>
+    </div>
   </div>
 
   <div class="modal hidden" id="infoModal">

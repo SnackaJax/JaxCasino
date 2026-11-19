@@ -72,13 +72,13 @@ setInterval(() => send({ type: 'ping' }), 25000);
 function onMessage(m) {
   switch (m.type) {
     case 'welcome':
-      W = m; myId = m.you; setupInfo(); fitBet(); renderBet(); layoutMeter();
+      W = m; myId = m.you; setupInfo(); setupBuys(); fitBet(); renderBet(); layoutMeter();
       $('loading').classList.add('hidden');
       break;
     case 'me':
       balance = m.balance;
       if (!busy || shownBalance === null) setShownBalance(balance);
-      renderBroke();
+      renderBroke(); renderBuys();
       break;
     case 'round':
       balance = m.balance;
@@ -131,6 +131,7 @@ function setBusy(v) {
   busy = v;
   $('spinBtn').classList.toggle('busy', v);
   $('betUp').disabled = v; $('betDown').disabled = v;
+  $('buyBtn').disabled = v;
   renderBroke();
 }
 function updateMuteBtn() { $('muteBtn').textContent = isMuted() ? '🔇' : '🔊'; }
@@ -155,6 +156,7 @@ function fitBet() {
 function renderBet() {
   $('bet').textContent = bet >= 1e6 ? shortAmount(bet) : fmt(bet);
   try { localStorage.setItem('reef-bet', String(bet)); } catch (e) { /* storage blocked */ }
+  renderBuys();
 }
 function stepBet(dir) {
   if (busy) return;
@@ -174,7 +176,7 @@ $('stage').addEventListener('click', (e) => {
   if (busy && !e.target.closest('.bigwin')) skipRequested = true;   // tap the reef to hurry the cascade up
 });
 document.addEventListener('keydown', (e) => {
-  if (e.code === 'Space' && !e.repeat && $('infoModal').classList.contains('hidden')) {
+  if (e.code === 'Space' && !e.repeat && $('infoModal').classList.contains('hidden') && $('buyModal').classList.contains('hidden')) {
     e.preventDefault();
     $('spinBtn').click();
   }
@@ -527,6 +529,10 @@ function setupInfo() {
     part of a win it shrinks to 2×2, and after another win it splits into 4 ordinary wilds.</p>
     <h3>Bubble Burst</h3>
     <p>When the first drop of a spin wins nothing, bubbles sometimes pop every symbol of one low-paying kind, so new ones drop in.</p>
+    ${Object.keys(W.buys).length ? `<h3>Bonus buys</h3>
+    <p>BUY skips the wait: a spin that starts with the Tide Meter already charged. ${Object.values(W.buys).map((b) =>
+      `<b>${esc(b.name)}</b> costs ${b.price}x your bet and starts at ${b.meter} charges (pays back ${(b.rtp * 100).toFixed(1)}%).`).join(' ')}
+    Everything else about the spin is the same as a normal one.</p>` : ''}
     <h3>Everyone on the reef</h3>
     <p>Everybody plays their own board. Everyone in this server with Reef Rush open is on the same reef: the panel shows what the
     others are doing, and big wins (${W.big_win}x and up) and the Kraken are announced to everyone.</p>
@@ -534,6 +540,47 @@ function setupInfo() {
     Space bar spins; tap the board to speed a spin up. Turbo speeds up the animations; Auto keeps spinning until you stop it.</p>`;
 }
 $('infoBtn').addEventListener('click', () => { sfx.click(); $('infoModal').classList.remove('hidden'); });
+
+// ------------------------------------------------------------------ bonus buys
+const BUY_ICON = { surge: 'wild', kraken: 'kraken' };
+// a buy never costs less than its price: rounded up, like the server does
+const stakeFor = (mode) => Math.max(1, Math.ceil(bet * (mode === 'spin' ? 1 : W.buys[mode].price) - 1e-9));
+function setupBuys() {
+  const has = W && Object.keys(W.buys || {}).length > 0;
+  $('buyBtn').classList.toggle('hidden', !has);
+  if (!has) return;
+  $('buys').innerHTML = Object.entries(W.buys).map(([k, b]) => `<button class="buy" data-mode="${k}">
+    <img src="${symbolImage(BUY_ICON[k] || 'wild')}" alt=""><div class="b-name">${esc(b.name)}</div><div class="b-text">${esc(b.text)}</div>
+    <div class="b-price" id="price-${k}"></div><div class="b-x">${b.price}× bet</div></button>`).join('');
+  for (const el of $('buys').querySelectorAll('.buy')) {
+    el.addEventListener('click', () => {
+      unlock(); sfx.click();
+      $('buyModal').classList.add('hidden');
+      doSpin(el.dataset.mode);
+    });
+  }
+  renderBuys();
+}
+function renderBuys() {
+  if (!W || !Object.keys(W.buys || {}).length) return;
+  $('buyBet').textContent = fmt(bet);
+  for (const k of Object.keys(W.buys)) {
+    const el = $(`price-${k}`);
+    if (!el) continue;
+    const cost = stakeFor(k);
+    el.textContent = fmt(cost);
+    el.parentElement.disabled = cost > balance;
+  }
+}
+$('buyBtn').addEventListener('click', () => {
+  unlock(); sfx.click();
+  if (busy) return;
+  if (autoOn) setAuto(false);
+  renderBuys();
+  $('buyModal').classList.remove('hidden');
+});
+$('buyClose').addEventListener('click', () => $('buyModal').classList.add('hidden'));
+$('buyModal').addEventListener('click', (e) => { if (e.target === $('buyModal')) $('buyModal').classList.add('hidden'); });
 $('infoClose').addEventListener('click', () => $('infoModal').classList.add('hidden'));
 $('infoModal').addEventListener('click', (e) => { if (e.target === $('infoModal')) $('infoModal').classList.add('hidden'); });
 
@@ -787,10 +834,13 @@ function setMeter(v, sound = true) {
 }
 
 // ================================================================== the game flow
-async function doSpin() {
+async function doSpin(mode = 'spin') {
   if (busy || !W) return;
-  if (bet > balance) {
-    toast(balance < W.min_bet ? "You're out of credits." : "You don't have enough credits for that bet.");
+  const cost = stakeFor(mode);
+  if (cost > balance) {
+    toast(balance < W.min_bet ? "You're out of credits."
+      : mode === 'spin' ? "You don't have enough credits for that bet."
+        : `You don't have enough credits for that: ${W.buys[mode].name} costs ${fmt(cost)}.`);
     sfx.error(); setAuto(false); return;
   }
   setBusy(true);
@@ -798,11 +848,11 @@ async function doSpin() {
   clearView();
   setMeter(0, false);
   $('boardFrame').classList.remove('kraken');
-  setWinText('Good luck!');
-  setShownBalance((shownBalance ?? balance) - bet);
+  setWinText(mode === 'spin' ? 'Good luck!' : `${W.buys[mode].name}!`);
+  setShownBalance((shownBalance ?? balance) - cost);
   sfx.spinStart();
   const answer = new Promise((res) => { waiter = res; });
-  if (!send({ type: 'spin', bet })) { waiter = null; setBusy(false); setShownBalance(balance); toast('Not connected.'); return; }
+  if (!send({ type: 'spin', bet, mode })) { waiter = null; setBusy(false); setShownBalance(balance); toast('Not connected.'); return; }
   const out = dropOut();
   const round = await answer;
   await out;
@@ -855,10 +905,13 @@ function syncTo(grid) {
 }
 
 async function playRound(round) {
-  const stake = round.stake;
+  const stake = round.bet ?? round.stake;   // pays are multiples of the bet (a bonus buy's stake is its price)
   let xSum = 0, cascade = 0;
   for (const step of round.steps) {
-    if (step.t === 'drop') await dropIn(step.grid);
+    if (step.t === 'drop') {
+      if (step.meter) setMeter(step.meter);   // a bonus buy starts with the Tide Meter charged
+      await dropIn(step.grid);
+    }
     else if (step.t === 'win') {
       cascade++;
       xSum += step.x;
@@ -1083,8 +1136,9 @@ async function finishUp(round) {
   view.hl = new Map(); view.dim = false; view.labels = [];
   if (pay > 0) {
     sfx.countEnd();
-    if (pay / round.stake >= W.big_win) {
-      await bigWin(pay, pay / round.stake);
+    const perBet = round.bet ?? round.stake;
+    if (pay / perBet >= W.big_win) {
+      await bigWin(pay, pay / perBet);
       send({ type: 'announce', round: round.id, what: 'win' });
     }
     setWinText(`${round.cascades > 1 ? `${round.cascades} cascades · ` : ''}TOTAL WIN ${fmt(pay)}`, true);
@@ -1097,9 +1151,10 @@ async function finishUp(round) {
   send({ type: 'shown', round: round.id });
   skipRequested = false;
   setBusy(false);
+  renderBuys();
   if (autoOn) {
     await sleep(pay > round.stake ? 800 : 350);
-    if (autoOn && !busy) doSpin();
+    if (autoOn && !busy) doSpin('spin');
   }
 }
 

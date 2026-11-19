@@ -117,6 +117,7 @@ body.discord-mobile #app { padding-top: max(env(safe-area-inset-top), var(--disc
   padding: 8px 12px 10px; background: linear-gradient(180deg, rgba(0,0,0,.2), rgba(0,0,0,.5));
   border-top: 2px solid var(--wood-dark); flex-wrap: wrap; }
 .lbl { font-size: 10px; letter-spacing: 1.5px; color: var(--muted); font-weight: 800; }
+.left-box { display: flex; align-items: center; gap: clamp(6px, 1.4vw, 14px); min-width: 0; }
 .bet-box { display: flex; align-items: center; gap: 8px; background: var(--panel); border: 2px solid var(--wood);
   border-radius: 99px; padding: 4px 6px; }
 .bet-val { min-width: 84px; text-align: center; font-weight: 800; font-size: 18px; font-variant-numeric: tabular-nums; }
@@ -144,6 +145,8 @@ body.discord-mobile #app { padding-top: max(env(safe-area-inset-top), var(--disc
 .broke { position: absolute; left: 0; right: 0; bottom: 100%; display: flex; align-items: center; justify-content: center; gap: 12px;
   padding: 8px; background: rgba(60, 10, 5, .95); border-top: 2px solid var(--fire); z-index: 30; flex-wrap: wrap; }
 .btn-restart { background: var(--good); color: #062; border-color: #b6f5c6; }
+.buy-btn { font-size: 13px; letter-spacing: 1px; padding: 10px 12px; border-color: var(--fire); background: linear-gradient(180deg, #a8320f, #5e1a08); color: #ffe7c2; }
+.buy-btn:hover { background: linear-gradient(180deg, #c23e14, #74210a); }
 
 /* ------------------------------------------------------------------ scenes (bonus) */
 /* A scene that is taller than the stage (phones) scrolls instead of squeezing its parts on top of each other:
@@ -289,6 +292,18 @@ body.discord-mobile #app { padding-top: max(env(safe-area-inset-top), var(--disc
 .modal-close { position: absolute; right: 12px; top: 12px; }
 .modal-card p, .modal-card li { font-size: 14px; line-height: 1.5; color: #f0e2cc; }
 .paytable { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.buy-note { font-size: 13px !important; color: var(--muted) !important; }
+.buys { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr)); gap: 10px; }
+.buy { display: flex; flex-direction: column; align-items: center; gap: 6px; background: var(--panel); border: 2px solid var(--wood); border-radius: 14px;
+  padding: 12px 10px; text-align: center; cursor: pointer; color: var(--text); font: inherit; transition: transform .15s, border-color .15s; }
+.buy:hover:not(:disabled) { transform: translateY(-3px); border-color: var(--mustard); }
+.buy:disabled { opacity: .45; cursor: default; }
+.buy .b-icons { display: flex; justify-content: center; height: 46px; }
+.buy .b-icons img { width: 40px; height: 46px; object-fit: contain; margin: 0 -5px; }
+.buy .b-name { font-weight: 800; font-size: 15px; }
+.buy .b-text { font-size: 12px; color: var(--muted); line-height: 1.35; min-height: 32px; }
+.buy .b-price { font-weight: 800; font-size: 16px; color: var(--mustard); font-variant-numeric: tabular-nums; }
+.buy .b-x { font-size: 11px; color: var(--muted); }
 .pt { display: flex; align-items: center; gap: 8px; background: var(--panel); border-radius: 10px; padding: 6px; }
 .pt img { width: 52px; height: 46px; object-fit: contain; }
 .pt .pays { font-size: 12px; color: var(--muted); line-height: 1.35; }
@@ -350,4 +365,6 @@ body.discord-mobile #app { padding-top: max(env(safe-area-inset-top), var(--disc
   .toggles { flex-direction: row; }
   .last-win { min-width: 70px; }
   .bet-val { min-width: 64px; font-size: 16px; }
+  .left-box { flex-direction: column-reverse; gap: 4px; align-items: stretch; }
+  .buy-btn { padding: 4px 8px; font-size: 11px; }
 }

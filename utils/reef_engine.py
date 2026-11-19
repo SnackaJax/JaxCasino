@@ -80,6 +80,24 @@ MAX_WIN = 5000
 # REEF_RTP of 99% every pay is 1.2% more than the table above. Re-measure after changing anything above.
 MEASURED_RTP = 0.9785
 
+# The bonus buys: a spin that starts with the Tide Meter already charged (their prices, in bets, are in PRICES)
+BUYS = {
+    "surge": {"name": "Tide Surge", "text": f"One spin with the Tide Meter already at {SURGE_AT}: a Surge is sure "
+                                            f"to hit"},
+    "kraken": {"name": "Kraken Call", "text": f"One spin with the Tide Meter already at {KRAKEN_AT}: a Surge, "
+                                              f"then the Kraken"},
+}
+BUY_METER = {"surge": SURGE_AT, "kraken": KRAKEN_AT}
+# Prices in bets. A buy pays at the paid spin's scale, like everything else, so its price sets its payback:
+# payback = REEF_RTP / MEASURED_RTP x (raw value of the bought spin) / price. Raw values measured with
+# `python -m utils.reef_engine buys` (± is the 95% range), paybacks at REEF_RTP 99%:
+#   surge    6x the bet: raw 5.848 ± 0.016 (9.6 million spins)  -> pays back 98.6% (98.3-98.9%)
+#   kraken 123x the bet: raw 120.24 ± 0.08 (2.4 million spins)  -> pays back 98.9% (98.85-98.97%)
+# A paid spin pays back 99.0% (98.7-99.3%). Re-measure after changing anything above.
+PRICES = {"surge": 6, "kraken": 123}
+BUY_VALUE = {"surge": 5.848, "kraken": 120.24}     # raw value of each buy, in x
+MODES = ("spin", *BUYS)
+
 MAX_STEPS = 400           # safety net for the cascade loop (never reached in practice)
 
 # neighbours of every cell; a cell is index c * ROWS + r (column c from the left, row r from the top)
@@ -172,7 +190,8 @@ class Round:
     """One paid spin, played out completely: `steps` is what the page animates, in order.
 
     Steps (cells are [column, row], grids are grid[column][row]):
-      {"t": "drop", "grid"}                                      the first symbols land
+      {"t": "drop", "grid", "meter"}                             the first symbols land ("meter": where the Tide
+                                                                 Meter starts: 0, or charged by a bonus buy)
       {"t": "win", "clusters": [{"sym", "cells", "size", "x"}], "x", "meter", "pearls": [cell], "kraken"}
                                                                  clusters pay and are removed; the Kraken (if
                                                                  it took part) shrinks or splits; "kraken" is
@@ -185,17 +204,18 @@ class Round:
       {"t": "bubble", "sym", "cells"}                            a Bubble Burst pops these cells
     """
 
-    def __init__(self, rng):
+    def __init__(self, rng, mode: str = "spin"):
+        self.mode = mode
         self.steps: list[dict] = []
         self.raw_x = 0.0
-        self.meter = 0
+        self.meter = BUY_METER.get(mode, 0)     # a bonus buy starts with the meter charged
         self.surge: str | None = None
         self.kraken_landed = False
         self.bubble = False
         self.cascades = 0
         self.kraken: dict | None = None      # {"c": left column, "size": 3 or 2}; it always sits on the bottom rows
         g: Grid = [draw(rng) for _ in range(N)]
-        self.steps.append({"t": "drop", "grid": nested(g)})
+        self.steps.append({"t": "drop", "grid": nested(g), "meter": self.meter})
         for _ in range(MAX_STEPS):
             found = clusters(g)
             if found:
@@ -357,8 +377,8 @@ class Round:
         self._fall(rng, g)
 
     def to_dict(self) -> dict:
-        return {"steps": self.steps, "x": self.x, "surge": self.surge, "kraken": self.kraken_landed,
-                "bubble": self.bubble, "cascades": self.cascades}
+        return {"steps": self.steps, "x": self.x, "mode": self.mode, "surge": self.surge,
+                "kraken": self.kraken_landed, "bubble": self.bubble, "cascades": self.cascades}
 
 
 # ------------------------------------------------------------------ credits
@@ -366,24 +386,42 @@ def scale(rtp: float) -> float:
     return rtp / MEASURED_RTP
 
 
+def price(mode: str) -> float:
+    """What a round in this mode costs, in bets."""
+    return 1 if mode == "spin" else PRICES[mode]
+
+
+def stake_for(bet: int, mode: str) -> int:
+    """What a round in this mode costs, in credits (rounded up, so a buy never costs less than its price)."""
+    return max(1, math.ceil(bet * price(mode) - 1e-9))
+
+
+def buy_rtp(mode: str, rtp: float) -> float:
+    """What a bonus buy pays back on average (0.99 = 99%) when paid spins are set to `rtp`."""
+    return scale(rtp) * BUY_VALUE[mode] / PRICES[mode]
+
+
 def credits(stake: int, x: float, rtp: float) -> int:
+    """`stake` is the bet the pays are multiples of (for a bonus buy: the bet, not the price paid)."""
     return math.floor(stake * x * scale(rtp) + 1e-9)
 
 
-def payout(stake: int, rnd: Round, rtp: float) -> int:
-    return min(credits(stake, rnd.x, rtp), stake * MAX_WIN)
+def payout(stake: int, rnd: Round, rtp: float, bet: int | None = None) -> int:
+    """What a round pays. Pays are multiples of the bet: for a bonus buy, pass the bet (the stake is its price)."""
+    bet = bet or stake
+    return min(credits(bet, rnd.x, rtp), bet * MAX_WIN)
 
 
 # ------------------------------------------------------------------ simulation
 def _sim_chunk(args) -> dict:
     import random
-    seed, n = args
+    seed, n, mode = (*args, "spin")[:3]
     rng = random.Random(seed)
     s = {"n": n, "total": 0.0, "sq": 0.0, "hits": 0, "above": 0, "surge": 0, "kraken": 0, "bubble": 0,
          "capped": 0, "biggest": 0.0, "cascades": 0, "surge_x": 0.0, "kraken_x": 0.0, "plain_x": 0.0,
          "by_surge": {k: 0 for k in SURGES}, "ge100": 0, "ge1000": 0}
     for _ in range(n):
-        rnd = Round(rng)
+        rnd = Round(rng, mode)
         x = rnd.x
         s["total"] += x
         s["sq"] += x * x
@@ -408,7 +446,7 @@ def _sim_chunk(args) -> dict:
     return s
 
 
-def _simulate(n: int) -> None:
+def _simulate(n: int, mode: str = "spin") -> None:
     import os
     import random
     import time
@@ -417,7 +455,7 @@ def _simulate(n: int) -> None:
     workers = os.cpu_count() or 4
     chunks = 4 * workers
     per = max(1, n // chunks)
-    seeds = [(random.getrandbits(64), per) for _ in range(chunks)]
+    seeds = [(random.getrandbits(64), per, mode) for _ in range(chunks)]
     with Pool(workers) as pool:
         parts = pool.map(_sim_chunk, seeds)
     tot = {k: 0 for k in parts[0] if k not in ("by_surge", "biggest")}
@@ -432,8 +470,14 @@ def _simulate(n: int) -> None:
     n = tot["n"]
     mean = tot["total"] / n
     sd = math.sqrt(max(tot["sq"] / n - mean * mean, 0))
-    print(f"{n:,} spins in {time.time() - t0:.0f}s on {workers} cores")
-    print(f"raw payback {mean:.4f} ± {1.96 * sd / math.sqrt(n):.4f} (95%), sd per spin {sd:.2f}")
+    ci = 1.96 * sd / math.sqrt(n)
+    print(f"[{mode}] {n:,} spins in {time.time() - t0:.0f}s on {workers} cores")
+    print(f"raw payback {mean:.4f} ± {ci:.4f} (95%), sd per spin {sd:.2f}")
+    if mode != "spin":
+        cost = price(mode)
+        print(f"price {cost:g}x: pays back {mean / cost * scale(0.99):.2%} "
+              f"({(mean - ci) / cost * scale(0.99):.2%}-{(mean + ci) / cost * scale(0.99):.2%}) at REEF_RTP 99%; "
+              f"break-even (99%) price {mean * scale(0.99) / 0.99:.3f}x")
     print(f"  from plain spins {tot['plain_x'] / n:.4f}, surge spins {tot['surge_x'] / n:.4f}, "
           f"kraken spins {tot['kraken_x'] / n:.4f}")
     print(f"wins on {tot['hits'] / n:.1%} of spins, more than the bet on {tot['above'] / n:.1%}, "
@@ -446,4 +490,10 @@ def _simulate(n: int) -> None:
 
 
 if __name__ == "__main__":
-    _simulate(int(sys.argv[1]) if len(sys.argv) > 1 else 2_000_000)
+    # python -m utils.reef_engine [spins]              paid spins
+    # python -m utils.reef_engine buys [spins]         every bonus buy (their raw values and paybacks)
+    if len(sys.argv) > 1 and sys.argv[1] == "buys":
+        for m in BUYS:
+            _simulate(int(sys.argv[2]) if len(sys.argv) > 2 else 1_000_000, m)
+    else:
+        _simulate(int(sys.argv[1]) if len(sys.argv) > 1 else 2_000_000)

@@ -97,7 +97,11 @@ def paytable_embed() -> discord.Embed:
         f"**Turn up the heat** — before playing, gamble up to {E.MAX_GAMBLES} times: win and the feature climbs a "
         "rung, lose and it drops one (from Hot Potato, the bonus burns). The odds are set so a gamble is "
         "worth exactly what you risk.\n\n"
-        f"Maximum win {E.MAX_WIN:,}x per spin. Returns {rtp() * 100:g}% of bets on average."))
+        f"Maximum win {E.MAX_WIN:,}x per spin. Returns {rtp() * 100:g}% of bets on average."
+        + ("\n\n**Bonus buys** — one spin that is sure to land the grills, straight into the Grill Bonus: "
+           + "; ".join(f"**{b['name']}** ({b['grills']} grills) {E.PRICES[k]:g}x your bet, pays back "
+                       f"{E.buy_rtp(k, rtp()) * 100:.1f}%" for k, b in E.BUYS.items())
+           + "." if config.BANGER_BUYS else "")))
     e.set_image(url="attachment://banger.png")
     return e
 
@@ -105,12 +109,15 @@ def paytable_embed() -> discord.Embed:
 class Game:
     """One paid spin of one player, from the reels to the end of its Grill Bonus."""
 
-    def __init__(self, cog: "BangerBash", user: discord.abc.User, wager):
+    def __init__(self, cog: "BangerBash", user: discord.abc.User, wager, mode: str = "spin"):
         self.cog = cog
         self.user = user
         self.wager = wager
-        self.stake = wager.stake
-        self.rnd = E.Round(rng)
+        self.mode = mode
+        # every pay is a multiple of the bet; a bonus buy's stake (what was paid) is its price x the bet
+        self.stake = wager.bet
+        self.paid = wager.stake
+        self.rnd = E.Round(rng, mode)
         self.message: discord.Message | discord.InteractionMessage | None = None
         self.send = None             # async (embed, png, view): updates the game message
         self.last_png: bytes | None = None
@@ -210,7 +217,9 @@ class Game:
     async def play(self) -> None:
         """The paid spin. Ends with the ladder (waiting for a choice) or with the result."""
         spin = self.rnd.spin
-        await self.animate_spin(spin, f"Bet {fmt(self.stake)} on 20 lines")
+        await self.animate_spin(spin, f"Bet {fmt(self.stake)} on 20 lines" if self.mode == "spin" else
+                                f"♨️ Bought the **{E.BUYS[self.mode]['name']}** for {fmt(self.paid)} "
+                                f"(bet {fmt(self.stake)})")
         if self.rnd.bonus is None:
             await self.finish()
             return
@@ -366,7 +375,7 @@ class Game:
             self.view.stop()
         rnd = self.rnd
         rnd.finish(rng)   # only does something after a timeout
-        payout = E.payout(self.stake, rnd, rtp())
+        payout = E.payout(self.paid, rnd, rtp(), self.stake)
         bal = await self.wager.settle(payout)
         lines = []
         base = cr(self.stake, rnd.spin.x)
@@ -385,8 +394,10 @@ class Game:
             lines.insert(0, "🎉 **MEGA WIN!**")
         elif mult >= 10:
             lines.insert(0, "🎉 **BIG WIN!**")
-        lines += ["", result_line(self.stake, payout, bal)]
-        view = AfterView(self.cog, self.user, self.stake)
+        if self.mode != "spin":
+            lines += ["", f"Bonus buy: paid {fmt(self.paid)} ({E.PRICES[self.mode]:g}x your bet of {fmt(self.stake)})."]
+        lines += ["", result_line(self.paid, payout, bal)]
+        view = AfterView(self.cog, self.user, self.stake, self.mode)
         view.message = self.message
         png = self.last_png
         if png is None or not rnd.bonus:
@@ -399,11 +410,11 @@ class Game:
                 spin.grid, lines=[w.line for w in spin.wins], win_cells={c for w in spin.wins for c in w.cells},
                 lit=lit, mega=mega, bet=self.stake, win=payout, message=spin_message(self.stake, spin)))
         try:
-            await self.show(png, "\n".join(lines), view, result_color(self.stake, payout))
+            await self.show(png, "\n".join(lines), view, result_color(self.paid, payout))
         finally:
             self.cog.release(self)
-        log.info("bangerbash: user %s bet %s, feature %s, bonus %s, paid %s", self.user.id, f"{self.stake:,}",
-                 rnd.spin.feature or "-",
+        log.info("bangerbash: user %s %s bet %s (paid %s), feature %s, bonus %s, won %s", self.user.id, self.mode,
+                 f"{self.stake:,}", f"{self.paid:,}", rnd.spin.feature or "-",
                  (E.TIERS[rnd.bonus.tier] + (" (burnt)" if rnd.bonus.lost else "")) if rnd.bonus else "-",
                  f"{payout:,}")
 
@@ -504,13 +515,24 @@ class PicnicView(DecisionView):
         return cb
 
 
+BUYS_OFF = "Bonus buys are switched off on this server."
+
+
+def buy_price(mode: str) -> tuple[float, str]:
+    """take_bet's price and name for a round in this mode."""
+    return (1, "") if mode == "spin" else (E.PRICES[mode], E.BUYS[mode]["name"])
+
+
 class AfterView(BaseView):
-    def __init__(self, cog: "BangerBash", owner: discord.abc.User, stake: int):
+    def __init__(self, cog: "BangerBash", owner: discord.abc.User, stake: int, mode: str = "spin"):
         super().__init__(timeout=AFTER_TIMEOUT)
         self.cog = cog
         self.owner = owner
-        self.stake = stake
+        self.stake = stake          # the bet
+        self.mode = mode            # "spin", or the bonus buy the button buys again
         self.message = None
+        if mode != "spin":
+            self.spin_again.label = f"Buy again ({E.PRICES[mode]:g}x)"
 
     @discord.ui.button(label="Spin again", style=discord.ButtonStyle.success, emoji="🔁")
     async def spin_again(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -521,14 +543,17 @@ class AfterView(BaseView):
         if self.cog.busy(interaction):
             await send_error(interaction, "You already have a Banger Bash round going. Finish it first.")
             return
+        if self.mode != "spin" and not config.BANGER_BUYS:
+            await send_error(interaction, BUYS_OFF)
+            return
         self.cog.hold(interaction)
         game = None
         try:
-            wager = await take_bet(interaction, str(self.stake), GAME)
+            wager = await take_bet(interaction, str(self.stake), GAME, *buy_price(self.mode))
             if not wager:
                 return
             self.stop()
-            game = Game(self.cog, self.owner, wager)
+            game = Game(self.cog, self.owner, wager, self.mode)
             self.cog.games[(interaction.guild_id, interaction.user.id)] = game
             game.bind(interaction, new=False)
             await self.cog.run(game)
@@ -587,7 +612,7 @@ class BangerBash(commands.Cog):
                     try:
                         await game.wager.refund()
                         log.warning("bangerbash: round of user %s failed before it was shown; refunded %s",
-                                    game.user.id, f"{game.stake:,}")
+                                    game.user.id, f"{game.paid:,}")
                     except Exception:
                         log.exception("bangerbash: couldn't refund the bet of user %s", game.user.id)
             raise
@@ -597,23 +622,30 @@ class BangerBash(commands.Cog):
     if config.BANGERBASH_IN_CHAT:
         @app_commands.command(name="bangerbash", description="Banger Bash: a 5x3 barbecue slot with random "
                                                              "features and the Grill Bonus.")
-        @app_commands.describe(bet=BET_DESC)
+        @app_commands.describe(bet=BET_DESC, buy="Bonus buy: a spin that is sure to land the grills (costs more "
+                                                  "than the bet)")
+        @app_commands.choices(buy=[app_commands.Choice(name=f"{b['name']}: {b['grills']} grills ({E.PRICES[k]:g}x "
+                                                            f"your bet)", value=k) for k, b in E.BUYS.items()])
         @gambling_only()
-        async def bangerbash(self, interaction: discord.Interaction, bet: str):
-            await self.play_in_chat(interaction, bet)
+        async def bangerbash(self, interaction: discord.Interaction, bet: str,
+                             buy: app_commands.Choice[str] | None = None):
+            await self.play_in_chat(interaction, bet, buy.value if buy else "spin")
 
-    async def play_in_chat(self, interaction: discord.Interaction, bet: str) -> None:
+    async def play_in_chat(self, interaction: discord.Interaction, bet: str, mode: str = "spin") -> None:
         """The chat version of Banger Bash (only used when BANGERBASH_IN_CHAT is on)."""
         if self.busy(interaction):
             await send_error(interaction, "You already have a Banger Bash round going. Finish it first.")
             return
+        if mode != "spin" and not config.BANGER_BUYS:
+            await send_error(interaction, BUYS_OFF)
+            return
         self.hold(interaction)
         game = None
         try:
-            wager = await take_bet(interaction, bet, GAME)
+            wager = await take_bet(interaction, bet, GAME, *buy_price(mode))
             if not wager:
                 return
-            game = Game(self, interaction.user, wager)
+            game = Game(self, interaction.user, wager, mode)
             self.games[(interaction.guild_id, interaction.user.id)] = game
             game.bind(interaction, new=True)
             await self.run(game)

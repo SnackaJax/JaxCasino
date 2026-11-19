@@ -40,14 +40,19 @@ def force_results(spots: list[str]) -> None:
 def force_banger(items: list[str]) -> None:
     """Testing aid: Banger Bash spins get these in turn (e.g. --banger flame,mystery,bonus,golden).
     Random features: flame, mystery, mega, hot, charcoal, sure, respin. A bonus: bonus (3 grills), bonus4, bonus5,
-    or a feature name (potato, picnic, grillspins, twinlinks, golden) for a bonus that awards it."""
+    or a feature name (potato, picnic, grillspins, twinlinks, golden) for a bonus that awards it. Bonus buys are
+    never forced."""
     from activity import banger
     from utils import banger_engine as E
     order = iter(items * 10_000)
     real_round = E.Round
 
     class Forced(real_round):
-        def __init__(self, r):
+        def __init__(self, r, mode="spin"):
+            if mode != "spin":
+                super().__init__(r, mode)
+                return
+            self.mode = mode
             what = next(order)
             tier = E.TIERS.index(what) if what in E.TIERS else None
             if what in E.FEATURES:
@@ -71,7 +76,7 @@ def force_banger(items: list[str]) -> None:
 def force_reef(items: list[str]) -> None:
     """Testing aid: Reef Rush spins get these in turn (e.g. --reef kraken,whirlpool,bubble). Each item is
     win, big (10x+), surge (any), whirlpool, riptide, undertow, shift, kraken or bubble; spins are drawn
-    until one matches."""
+    until one matches. Bonus buys are never forced."""
     from activity import reef
     from utils import reef_engine as E
     order = iter(items * 10_000)
@@ -80,7 +85,9 @@ def force_reef(items: list[str]) -> None:
              "kraken": lambda r: r.kraken_landed, "bubble": lambda r: r.bubble,
              **{k: (lambda k: lambda r: r.surge == k)(k) for k in E.SURGES}}
 
-    def forced(r):
+    def forced(r, mode="spin"):
+        if mode != "spin":
+            return real_round(r, mode)
         test = tests.get(next(order), lambda _: True)
         for _ in range(200_000):
             rnd = real_round(r)

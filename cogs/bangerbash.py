@@ -20,7 +20,7 @@ import config
 from utils import banger_engine as E
 from utils import banger_image as I
 from utils.checks import gambling_only
-from utils.economy import fmt, result_color, result_line, send_error, take_bet, tag
+from utils.economy import buy_limit_note, fmt, result_color, result_line, send_error, take_bet, tag
 from utils.rng import rng
 from utils.views import BaseView
 
@@ -101,7 +101,7 @@ def paytable_embed() -> discord.Embed:
         + ("\n\n**Bonus buys** — one spin that is sure to land the grills, straight into the Grill Bonus: "
            + "; ".join(f"**{b['name']}** ({b['grills']} grills) {E.PRICES[k]:g}x your bet, pays back "
                        f"{E.buy_rtp(k, rtp()) * 100:.1f}%" for k, b in E.BUYS.items())
-           + "." if config.BANGER_BUYS else "")))
+           + "." + buy_limit_note() if config.BANGER_BUYS else "")))
     e.set_image(url="attachment://banger.png")
     return e
 

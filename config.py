@@ -42,6 +42,9 @@ RESTART_AMOUNT = _int("RESTART_AMOUNT", 500)
 RESTART_PRESSES = max(1, _int("RESTART_PRESSES", 1))
 RESTART_PAY_BLOCK = max(0, _int("RESTART_PAY_BLOCK_SECONDS", 3600))  # in seconds
 MAX_BET = _int("MAX_BET", 0)  # 0 = unlimited
+# The biggest bet a slot bonus buy can be played at (a buy costs its price times the bet), in the Activity and the
+# chat slots alike. Paid spins go up to MAX_BET. 0 = no limit.
+BUY_MAX_BET = max(0, _int("BUY_MAX_BET", 100_000_000))
 
 HOUSE_EDGE = min(max(_float("HOUSE_EDGE", 0.02), 0.0), 0.5)
 POKER_RAKE = min(max(_float("POKER_RAKE", 0.0), 0.0), 0.5)

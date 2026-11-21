@@ -12,7 +12,7 @@ from functools import lru_cache
 from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
 from utils import slot_engine as E
-from utils.table_image import K, font
+from utils.table_image import K, font, short_amount
 
 CW, CH = 120, 108           # cell size
 GX, GY = 60, 92             # grid top-left
@@ -415,9 +415,9 @@ def render(frame: SlotFrame) -> bytes:
 
     f = font("bold", 16)
     yb = P(40)
-    _pill(d, P(GX - 12), yb, f"BET {frame.bet:,}", f, WHITE, (40, 36, 80), FRAME, anchor="l")
+    _pill(d, P(GX - 12), yb, f"BET {short_amount(frame.bet)}", f, WHITE, (40, 36, 80), FRAME, anchor="l")
     win_bg = (40, 110, 60) if frame.win else (40, 36, 80)
-    _pill(d, P(GX + GW + 12), yb, f"WIN {frame.win:,}", f, WHITE, win_bg, (110, 220, 140) if frame.win else FRAME,
+    _pill(d, P(GX + GW + 12), yb, f"WIN {short_amount(frame.win)}", f, WHITE, win_bg, (110, 220, 140) if frame.win else FRAME,
           anchor="r")
     yf = P(GY + GH + 42)
     if frame.free:

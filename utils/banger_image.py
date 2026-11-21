@@ -15,7 +15,7 @@ from functools import lru_cache
 from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
 from utils import banger_engine as E
-from utils.table_image import K, font
+from utils.table_image import K, font, short_amount
 
 CW, CH = 140, 124
 GX, GY = 60, 104
@@ -513,8 +513,8 @@ def render(frame: Frame) -> bytes:
         img.alpha_composite(ln)
     if frame.banner and done:
         banner(img, d, P(W / 2), P(GY + GH / 2), frame.banner)
-    pill(d, P(GX - 14), P(46), f"BET {frame.bet:,}", WHITE, (70, 40, 26), WOOD, anchor="l")
-    pill(d, P(GX + GW + 14), P(46), f"WIN {frame.win:,}", WHITE, GREEN if frame.win else (70, 40, 26),
+    pill(d, P(GX - 14), P(46), f"BET {short_amount(frame.bet)}", WHITE, (70, 40, 26), WOOD, anchor="l")
+    pill(d, P(GX + GW + 14), P(46), f"WIN {short_amount(frame.win)}", WHITE, GREEN if frame.win else (70, 40, 26),
          (120, 230, 140) if frame.win else WOOD, anchor="r")
     yf = P(GY + GH + 44)
     if free:
@@ -563,7 +563,7 @@ def render_ladder(tier: int, *, chance: float | None, gambles_left: int, stake: 
         d.text((P(x0 + 22), P(y + 22)), f"{rung + 1}. {E.TIER_NAMES[kind].upper()}", font=font("bold", 20),
                fill=WHITE if on or nxt else GREY, anchor="lm")
         avg = E.credits(stake, E.FEATURE_EV[kind], rtp)
-        d.text((P(x0 + 22), P(y + 46)), f"{E.TIER_TEXT[kind]} · avg {avg:,}", font=font("regular", 15),
+        d.text((P(x0 + 22), P(y + 46)), f"{E.TIER_TEXT[kind]} · avg {short_amount(avg)}", font=font("regular", 15),
                fill=(240, 220, 200) if on else GREY, anchor="lm")
         if on:
             label = {"up": "HEAT RISES!", "down": "DROPPED"}.get(flash, "YOUR FEATURE")
@@ -620,13 +620,13 @@ def render_potato(state: dict, stake: int, rtp: float, reveal: list | None = Non
         elif val is None:
             pill(d, P(cx), P(330), "BURNT!", WHITE, (120, 20, 10) if i == pick else (60, 30, 20), FIRE, size=18)
         else:
-            text = f"+{E.credits(stake, val, rtp):,}"
+            text = f"+{short_amount(E.credits(stake, val, rtp))}"
             pill(d, P(cx), P(330), text, (60, 30, 0) if i == pick else GREY, MUSTARD if i == pick else (70, 40, 26),
                  WHITE if i == pick else WOOD, size=18)
     rnd = state["round"] if reveal else state["round"] + 1
     pill(d, P(gx0), P(445), f"ROUND {min(rnd, E.POTATO_ROUNDS)} / {E.POTATO_ROUNDS}", WHITE, (150, 50, 15), FIRE,
          anchor="l")
-    pill(d, P(gx1), P(445), f"TOTAL {E.credits(stake, state['total'], rtp):,}", WHITE, GREEN, (120, 230, 140),
+    pill(d, P(gx1), P(445), f"TOTAL {short_amount(E.credits(stake, state['total'], rtp))}", WHITE, GREEN, (120, 230, 140),
          anchor="r")
     msg = ("Round 1 is safe — pick any sausage!" if state["round"] == 0 and not reveal
            else "One of these three is burnt!" if not reveal else "")
@@ -678,7 +678,7 @@ def render_picnic(state: dict, stake: int, rtp: float, last: int | None = None) 
             elif v == "double":
                 text = "DOUBLE"
             else:
-                text = f"{E.credits(stake, v, rtp):,}"
+                text = f"{short_amount(E.credits(stake, v, rtp))}"
             d.text((P(x + bw / 2), P(y + bh / 2 + (28 if v == "ants" else 0))), text,
                    font=font("bold", 22 if v != "ants" else 16),
                    fill=(WHITE if mine else GREY), anchor="mm", stroke_width=P(2), stroke_fill=(30, 10, 5))
@@ -689,7 +689,7 @@ def render_picnic(state: dict, stake: int, rtp: float, last: int | None = None) 
     yb = y0 + rows * (bh + gap) + 20
     pill(d, P(x0), P(yb), "DOUBLED x2" if state["doubled"] else "1 DOUBLER HIDDEN", (60, 30, 0) if state["doubled"]
          else WHITE, MUSTARD if state["doubled"] else (70, 40, 26), WHITE if state["doubled"] else WOOD, anchor="l")
-    pill(d, P(w - x0), P(yb), f"TOTAL {E.credits(stake, state['total'], rtp):,}", WHITE, GREEN, (120, 230, 140),
+    pill(d, P(w - x0), P(yb), f"TOTAL {short_amount(E.credits(stake, state['total'], rtp))}", WHITE, GREEN, (120, 230, 140),
          anchor="r")
     if not state["done"]:
         d.text((P(w / 2), P(yb)), "Find the prizes · avoid the 2 ant nests", font=font("bold", 16), fill=MUSTARD,
@@ -753,7 +753,7 @@ def render_golden(value: int, step: int | None, stake: int, rtp: float, done: bo
         pill(d, P(cx), P(cy + 50), f"+{step}x", (60, 30, 0), MUSTARD, WHITE, size=24)
     yb = 440
     pill(d, P(70), P(yb), f"MAX {E.GOLDEN_MAX}x", WHITE, (150, 50, 15), FIRE, anchor="l")
-    pill(d, P(w - 70), P(yb), f"WIN {E.credits(stake, value, rtp):,}", WHITE, GREEN, (120, 230, 140), anchor="r")
+    pill(d, P(w - 70), P(yb), f"WIN {short_amount(E.credits(stake, value, rtp))}", WHITE, GREEN, (120, 230, 140), anchor="r")
     d.text((P(w / 2), P(yb)), "The grill has cooled!" if done else "Turning up the heat...", font=font("bold", 18),
            fill=MUSTARD, anchor="mm", stroke_width=P(2), stroke_fill=(30, 10, 5))
     return to_png(img, w, h)

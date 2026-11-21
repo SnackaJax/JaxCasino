@@ -19,7 +19,7 @@ from discord.ext import commands
 import config
 from utils import slot_engine as E
 from utils.checks import gambling_only
-from utils.economy import fmt, result_color, result_line, send_error, take_bet, tag
+from utils.economy import buy_limit_note, fmt, result_color, result_line, send_error, take_bet, tag
 from utils.rng import rng
 from utils.slot_image import SlotFrame, render, render_paylines
 from utils.views import BaseView
@@ -103,7 +103,7 @@ def paytable_embed() -> discord.Embed:
         f"on average."
         + (f"\n\n**Bonus buy:** `/slots buy:{E.BUY_NAME}` costs **{E.BUY_PRICE:g}x** your bet for a spin that is "
            f"sure to land {E.BUY_COMETS} comets ({E.FREE_SPINS[E.BUY_COMETS]} free spins). It pays back "
-           f"{E.buy_rtp(config.SLOTS_RTP) * 100:.1f}% on average." if config.SLOTS_BUYS else "")))
+           f"{E.buy_rtp(config.SLOTS_RTP) * 100:.1f}% on average.{buy_limit_note()}" if config.SLOTS_BUYS else "")))
     e.set_image(url="attachment://paylines.png")
     return e
 

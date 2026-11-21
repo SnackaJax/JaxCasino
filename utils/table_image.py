@@ -76,6 +76,17 @@ class TableInfo:
 
 
 # --------------------------------------------------------------------------- helpers
+def short_amount(n: int) -> str:
+    """An amount for a picture: in full below a million (25,000), short from there (2.5M, 487.5M, 1B, 2.5T)."""
+    if n >= 1_000_000:
+        for d, u in ((10 ** 12, "T"), (10 ** 9, "B"), (10 ** 6, "M")):
+            x = n / d
+            t = round(x, 2 if x < 10 else 1)
+            if t >= 1:
+                return f"{t:g}{u}" if t < 1e5 else f"{round(t):,}{u}"
+    return f"{n:,}"
+
+
 @lru_cache(maxsize=64)
 def font(kind: str, size: int) -> ImageFont.FreeTypeFont:
     for name in FONT_FILES[kind]:

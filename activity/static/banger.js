@@ -8,7 +8,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const fmt = (n) => Math.round(n).toLocaleString('en-US');
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const BET_STEPS = [10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 25000, 50000, 100000, 250000, 500000, 1000000];
+const BET_STEPS = [10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 25000, 50000, 100000, 250000, 500000,
+  1e6, 2.5e6, 5e6, 1e7, 2.5e7, 5e7, 1e8, 2.5e8, 5e8, 1e9];
 const LINE_COLORS = ['#ff5a5a', '#5ac8ff', '#78f078', '#ffc83c', '#ff78dc', '#a082ff', '#ff9646', '#50f0d2', '#e6e65a', '#ff6e96',
   '#6eaaff', '#beff6e', '#ffaa78', '#c878ff', '#6effaa', '#ffe696', '#96dcff', '#ff8cbe', '#b4c878', '#f0aaff'];
 const HIGH_BG = { king: ['#5a420e', '#be9628'], hotdog: ['#601a16', '#b43c32'], brat: ['#563212', '#aa6e32'] };
@@ -155,10 +156,16 @@ function toast(text, good = false) {
 }
 // big balances are shortened on phones (247.2M) so the header fits; the full number is in the tooltip
 function shortAmount(n) {
-  if (n >= 1e9) return `${(n / 1e9).toFixed(n >= 1e10 ? 1 : 2)}B`;
-  if (n >= 1e6) return `${(n / 1e6).toFixed(n >= 1e8 ? 1 : 2)}M`;
+  for (const [d, u] of [[1e12, 'T'], [1e9, 'B'], [1e6, 'M']]) {
+    const x = n / d, t = +x.toFixed(x >= 100 ? 1 : 2);
+    if (t >= 1) return `${t}${u}`;
+  }
   return fmt(n);
 }
+// a bet: in full below a million, short from there (2.5M, 1B)
+const betText = (v) => (v >= 1e6 ? shortAmount(v) : fmt(v));
+// a win or a price: short from a billion, and from a million on phones
+const amt = (v) => (v >= 1e9 || (v >= 1e6 && window.innerWidth < 520) ? shortAmount(v) : fmt(v));
 function setShownBalance(v, bumpIt = false) {
   shownBalance = v;
   $('balance').textContent = window.innerWidth < 520 && v >= 1e6 ? shortAmount(v) : fmt(v);
@@ -166,7 +173,7 @@ function setShownBalance(v, bumpIt = false) {
   if (bumpIt) { const b = $('balance').parentElement; b.classList.remove('bump'); void b.offsetWidth; b.classList.add('bump'); }
 }
 function setWinText(text, won = false) { $('winText').textContent = text; $('winBar').classList.toggle('won', won); }
-function setLastWin(v) { $('lastWin').textContent = fmt(v); $('lastWin').classList.toggle('on', v > 0); }
+function setLastWin(v) { $('lastWin').textContent = amt(v); $('lastWin').title = `${fmt(v)} credits`; $('lastWin').classList.toggle('on', v > 0); }
 function banner(main, sub = '', ms = 1600) {
   $('bannerMain').textContent = main; $('bannerSub').textContent = sub;
   const b = $('banner'); b.classList.add('hidden'); void b.offsetWidth; b.classList.remove('hidden');
@@ -177,6 +184,7 @@ function setBusy(v) {
   busy = v;
   $('spinBtn').classList.toggle('busy', v);
   $('betUp').disabled = v; $('betDown').disabled = v;
+  $('bet').parentElement.classList.toggle('locked', v);
   $('buyBtn').disabled = v;
   renderBroke();
 }
@@ -200,7 +208,8 @@ function fitBet() {
   if (!steps.includes(bet)) bet = steps.reduce((a, b) => (Math.abs(b - bet) < Math.abs(a - bet) ? b : a), steps[0]);
 }
 function renderBet() {
-  $('bet').textContent = fmt(bet);
+  $('bet').textContent = betText(bet);
+  $('bet').title = `${fmt(bet)} credits`;
   try { localStorage.setItem('banger-bet', String(bet)); } catch (e) { /* storage blocked */ }
   renderBuys();
 }
@@ -210,8 +219,55 @@ function stepBet(dir) {
   const i = clamp(steps.indexOf(bet) + dir, 0, steps.length - 1);
   if (steps[i] !== bet) { bet = steps[i]; sfx.bet(dir > 0); renderBet(); }
 }
-$('betUp').addEventListener('click', () => stepBet(1));
-$('betDown').addEventListener('click', () => stepBet(-1));
+// hold + or − to keep stepping (faster the longer it's held); tap the bet itself to pick any step at once
+function holdToStep(btn, dir) {
+  let timer = null;
+  const stop = () => { clearTimeout(timer); timer = null; };
+  const repeat = (ms) => {
+    timer = setTimeout(() => { if (busy || btn.disabled) { stop(); return; } stepBet(dir); repeat(Math.max(60, ms * 0.8)); }, ms);
+  };
+  btn.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0 || btn.disabled) return;
+    stop(); stepBet(dir); repeat(420);
+  });
+  for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) btn.addEventListener(ev, stop);
+  btn.addEventListener('click', (e) => { if (e.detail === 0) stepBet(dir); });   // Enter / Space on the button
+  btn.addEventListener('contextmenu', (e) => e.preventDefault());
+}
+holdToStep($('betUp'), 1);
+holdToStep($('betDown'), -1);
+const betModal = document.createElement('div');
+betModal.className = 'modal hidden'; betModal.id = 'betModal';
+betModal.innerHTML = `<div class="modal-card bet-card"><button class="icon-btn modal-close" id="betClose" aria-label="Close">✕</button>
+  <h2>Choose your bet</h2><div class="bet-grid" id="betGrid"></div><p class="buy-note" id="betNote"></p></div>`;
+document.body.appendChild(betModal);
+const betVal = $('bet').parentElement;
+betVal.classList.add('pick');
+betVal.setAttribute('role', 'button'); betVal.tabIndex = 0; betVal.title = 'Choose your bet';
+function openBetPicker() {
+  if (busy || !W) return;
+  unlock(); sfx.click();
+  const steps = allowedSteps();
+  $('betGrid').innerHTML = steps.map((v) => `<button class="bet-opt${v === bet ? ' on' : ''}${v > balance ? ' over' : ''}"
+    data-v="${v}" title="${fmt(v)}">${betText(v)}</button>`).join('');
+  const buyMax = Object.keys(W.buys || {}).length && W.buy_max_bet;
+  $('betNote').textContent = buyMax && steps.some((v) => v > buyMax) ? `Bonus buys go up to a bet of ${betText(buyMax)}.` : '';
+  betModal.classList.remove('hidden');
+  const on = $('betGrid').querySelector('.on');
+  if (on) on.focus({ preventScroll: true });
+}
+betVal.addEventListener('click', openBetPicker);
+betVal.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); openBetPicker(); } });
+$('betGrid').addEventListener('click', (e) => {
+  const b = e.target.closest('.bet-opt');
+  if (!b) return;
+  const v = Number(b.dataset.v);
+  if (v !== bet && !busy) { sfx.bet(v > bet); bet = v; renderBet(); }
+  betModal.classList.add('hidden');
+});
+$('betClose').addEventListener('click', () => betModal.classList.add('hidden'));
+betModal.addEventListener('click', (e) => { if (e.target === betModal) betModal.classList.add('hidden'); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') betModal.classList.add('hidden'); });
 $('spinBtn').addEventListener('click', () => {
   unlock();
   if (autoOn && busy) { setAuto(false); return; }
@@ -219,7 +275,8 @@ $('spinBtn').addEventListener('click', () => {
   doSpin();
 });
 document.addEventListener('keydown', (e) => {
-  if (e.code === 'Space' && !e.repeat && $('infoModal').classList.contains('hidden') && $('buyModal').classList.contains('hidden')) {
+  if (e.code === 'Space' && !e.repeat && $('infoModal').classList.contains('hidden') && $('buyModal').classList.contains('hidden')
+    && $('betModal').classList.contains('hidden')) {
     e.preventDefault();
     $('spinBtn').click();
   }
@@ -276,7 +333,7 @@ function statusText(p) {
   switch (p.status) {
     case 'spinning': return ['spinning…', false];
     case 'ladder': return [`🔥 in the Grill Bonus${tier ? ` (${tier})` : ''}`, true];
-    case 'idle': return [p.last_win ? `last win ${fmt(p.last_win)}` : (p.online ? 'at the grill' : 'away'), false];
+    case 'idle': return [p.last_win ? `last win ${amt(p.last_win)}` : (p.online ? 'at the grill' : 'away'), false];
     default: return [`🔥 playing ${tier || 'a bonus'}`, true];
   }
 }
@@ -290,7 +347,7 @@ function renderPlayers() {
   }).join('');
 }
 function feedHtml(it) {
-  const amount = it.amount ? ` <span class="amt">${fmt(it.amount)}</span>` : '';
+  const amount = it.amount ? ` <span class="amt" title="${fmt(it.amount)}">${amt(it.amount)}</span>` : '';
   return `<div class="feed-item ${it.kind}"><b>${esc(it.name)}</b> ${esc(it.text)}${amount}</div>`;
 }
 function renderFeed() {
@@ -301,7 +358,7 @@ function onFeed(item) {
   if (item.id === myId) return;
   const el = document.createElement('div');
   el.className = item.kind;
-  el.innerHTML = `${item.kind === 'win' ? '🎉' : '🔥'} <b>${esc(item.name)}</b> ${esc(item.text)}${item.amount ? ` <b>${fmt(item.amount)}</b>` : ''}`;
+  el.innerHTML = `${item.kind === 'win' ? '🎉' : '🔥'} <b>${esc(item.name)}</b> ${esc(item.text)}${item.amount ? ` <b>${amt(item.amount)}</b>` : ''}`;
   $('feedPop').prepend(el);
   setTimeout(() => el.remove(), 5200);
   sfx.feed();
@@ -332,7 +389,7 @@ function setupInfo() {
     ${Object.keys(W.buys).length ? `<h3>Bonus buys</h3>
     <p>BUY skips the wait: one spin that is sure to land the grills, straight into the Grill Bonus (turning up the heat
     works as usual). ${Object.values(W.buys).map((b) => `<b>${esc(b.name)}</b> (${b.grills} grills) costs ${b.price}x your bet and
-    pays back ${(b.rtp * 100).toFixed(1)}%.`).join(' ')}</p>` : ''}
+    pays back ${(b.rtp * 100).toFixed(1)}%.`).join(' ')}${W.buy_max_bet ? ` Bonus buys go up to a bet of ${betText(W.buy_max_bet)}.` : ''}</p>` : ''}
     <h3>Everyone at the barbecue</h3>
     <p>Everybody plays their own machine. Everyone in this server with Banger Bash open is at the same barbecue, whether they
     started it in a voice call or with /bangerbash in a text channel. The panel on the right shows what the others are doing,
@@ -362,15 +419,34 @@ function setupBuys() {
   }
   renderBuys();
 }
+// bonus buys go up to W.buy_max_bet: above it the buys are greyed out, with a button to drop the bet to the limit
+function buyLimitStep() {
+  const s = allowedSteps().filter((v) => v <= W.buy_max_bet);
+  return s.length ? s[s.length - 1] : null;
+}
+function renderBuyLimit() {
+  if (!$('buyLimit')) $('buys').insertAdjacentHTML('beforebegin', '<p class="buy-limit hidden" id="buyLimit"></p>');
+  const el = $('buyLimit');
+  const over = buyTooBig();
+  el.classList.toggle('hidden', !over);
+  if (!over) return;
+  const to = buyLimitStep();
+  el.innerHTML = `Bonus buys go up to a bet of <b>${betText(W.buy_max_bet)}</b>.`
+    + (to ? ` <button class="buy-limit-btn" id="buyLimitBtn">Bet ${betText(to)}</button>` : '');
+  if (to) $('buyLimitBtn').addEventListener('click', () => { sfx.bet(false); bet = to; renderBet(); });
+}
+function buyTooBig() { return Boolean(W && W.buy_max_bet && bet > W.buy_max_bet); }
 function renderBuys() {
   if (!W || !Object.keys(W.buys || {}).length) return;
-  $('buyBet').textContent = fmt(bet);
+  $('buyBet').textContent = betText(bet);
+  renderBuyLimit();
   for (const k of Object.keys(W.buys)) {
     const el = $(`price-${k}`);
     if (!el) continue;
     const cost = stakeFor(k);
-    el.textContent = fmt(cost);
-    el.parentElement.disabled = cost > balance;
+    el.textContent = amt(cost);
+    el.title = `${fmt(cost)} credits`;
+    el.parentElement.disabled = cost > balance || buyTooBig();
   }
 }
 $('buyBtn').addEventListener('click', () => {
@@ -753,11 +829,14 @@ function stopCycle() { if (cycleTimer) { clearInterval(cycleTimer); cycleTimer =
 
 async function doSpin(mode = 'spin') {
   if (busy || !W) return;
+  if (mode !== 'spin' && buyTooBig()) {
+    toast(`Bonus buys go up to a bet of ${betText(W.buy_max_bet)}.`); sfx.error(); return;
+  }
   const cost = stakeFor(mode);
   if (cost > balance) {
     toast(balance < W.min_bet ? "You're out of credits."
       : mode === 'spin' ? "You don't have enough credits for that bet."
-        : `You don't have enough credits for that: ${W.buys[mode].name} costs ${fmt(cost)}.`);
+        : `You don't have enough credits for that: ${W.buys[mode].name} costs ${amt(cost)}.`);
     sfx.error(); setAuto(false); return;
   }
   const token = ++flow;
@@ -920,7 +999,7 @@ function countUp(el, from, to, ms, sound = true) {
     const step = () => {
       const p = skipRequested ? 1 : clamp((performance.now() - t0) / ms, 0, 1);
       const v = from + (to - from) * (1 - Math.pow(1 - p, 2));
-      el.textContent = fmt(v);
+      el.textContent = amt(v);
       if (sound && p < 1) sfx.count(p);
       if (p < 1) requestAnimationFrame(step); else resolve();
     };
@@ -967,7 +1046,7 @@ function startCycle(spin, stake) {
     const cells = new Set();
     for (let r = 0; r < w.count; r++) cells.add(key(r, W.paylines[w.line][r]));
     view.win = cells; view.dim = true;
-    view.lines = [{ line: w.line, label: fmt(credits(stake, w.x * spin.mult)) }];
+    view.lines = [{ line: w.line, label: amt(credits(stake, w.x * spin.mult)) }];
     i++;
   };
   show();
@@ -990,7 +1069,7 @@ async function finishRound(round, token) {
     send({ type: 'announce', round: round.id, what: 'win' });
   }
   setLastWin(s.payout);
-  if (s.payout > 0 && round.bonus) setWinText(`TOTAL WIN ${fmt(s.payout)}`, true);
+  if (s.payout > 0 && round.bonus) setWinText(`TOTAL WIN ${amt(s.payout)}`, true);
   setShownBalance(s.balance, s.payout > 0);
   send({ type: 'shown', round: round.id });
   setBusy(false);
@@ -1078,9 +1157,9 @@ async function playBonus(round, token, baseWon, resumed) {
   guard(token);
   hideScenes();
   setLastWin(baseWon + won);
-  setWinText(`${tierName(b.tier)} won ${fmt(won)}`, won > 0);
+  setWinText(`${tierName(b.tier)} won ${amt(won)}`, won > 0);
   sfx.countEnd();
-  await banner(`${tierName(b.tier).toUpperCase()} WON`, fmt(won), 1800);
+  await banner(`${tierName(b.tier).toUpperCase()} WON`, amt(won), 1800);
 }
 
 function showLadder(b, stake) {
@@ -1094,7 +1173,7 @@ function showLadder(b, stake) {
     const next = canGamble && i === b.tier + 1;
     const tag = on ? 'YOUR FEATURE' : next ? `${Math.round(b.chance * 100)}% TO CLIMB` : '';
     return `<div class="rung${on ? ' on' : ''}${next ? ' next' : ''}" data-i="${i}"><div class="num">${i + 1}</div>
-      <div><div class="rn">${esc(t.name)}</div><div class="rt">${esc(t.text)} · avg ${fmt(stake * t.avg)}</div></div>
+      <div><div class="rn">${esc(t.name)}</div><div class="rt">${esc(t.text)} · avg ${amt(stake * t.avg)}</div></div>
       ${tag ? `<div class="tag">${tag}</div>` : ''}</div>`;
   }).join('');
   const bars = 12;
@@ -1168,7 +1247,7 @@ async function playPotato(round, b, token) {
   const stake = round.bet ?? round.stake;   // pays are multiples of the bet (a buy's stake is its price)
   let f = b.feature;
   $('potatoScene').classList.remove('hidden');
-  $('potatoTotal').textContent = `TOTAL ${fmt(credits(stake, f.total))}`;
+  $('potatoTotal').textContent = `TOTAL ${amt(credits(stake, f.total))}`;
   while (!f.done) {
     guard(token);
     drawSausages(null, null, stake);
@@ -1189,7 +1268,7 @@ async function playPotato(round, b, token) {
     if (v === null) { sfx.burnt(); burstAt(box, ['#555', '#333', '#ff5a1e']); }
     else { sfx.prize(Math.min(5, Math.log2(v))); burstAt(box, ['#fff3a6', '#ffc828', '#ffe15a']); }
     f = m.bonus.feature;
-    $('potatoTotal').textContent = `TOTAL ${fmt(credits(stake, f.total))}`;
+    $('potatoTotal').textContent = `TOTAL ${amt(credits(stake, f.total))}`;
     $('potatoTotal').classList.remove('pop'); void $('potatoTotal').offsetWidth; $('potatoTotal').classList.add('pop');
     await sleep(T(1500));
   }
@@ -1200,7 +1279,7 @@ function drawSausages(row, pick, stake) {
     let cls = 'sausage', tag = 'ABC'[i];
     if (row) {
       const v = row[i];
-      if (v === null) { cls += ' burnt'; tag = 'BURNT!'; } else { cls += ' prize'; tag = `+${fmt(credits(stake, v))}`; }
+      if (v === null) { cls += ' burnt'; tag = 'BURNT!'; } else { cls += ' prize'; tag = `+${amt(credits(stake, v))}`; }
       if (i === pick) cls += ' picked'; else cls += ' faded';
     }
     return `<button class="${cls}" data-i="${i}" ${row ? 'disabled' : ''}><img src="/static/banger/brat.png" alt="Sausage ${'ABC'[i]}"><span class="tag">${tag}</span></button>`;
@@ -1263,12 +1342,12 @@ function drawHampers(f, stake, last) {
     const v = mine ? opened[String(i)] : all ? all[i] : undefined;
     if (v === undefined) return `<button class="hamper" data-i="${i}" ${f.done ? 'disabled' : ''}><span class="num">${i + 1}</span><div class="basket"></div></button>`;
     const kind = v === 'ants' ? 'ants' : v === 'double' ? 'double' : 'prize';
-    const text = v === 'ants' ? '🐜 ANTS!' : v === 'double' ? '×2 DOUBLE' : fmt(credits(stake, v));
+    const text = v === 'ants' ? '🐜 ANTS!' : v === 'double' ? '×2 DOUBLE' : amt(credits(stake, v));
     return `<button class="hamper open ${kind}${mine ? '' : ' unpicked'}" data-i="${i}" disabled style="${i === last ? '' : 'animation:none'}">${text}</button>`;
   }).join('');
   $('picnicDouble').textContent = f.doubled ? 'DOUBLED ×2' : '1 DOUBLER HIDDEN';
   $('picnicDouble').className = `pill${f.doubled ? ' gold' : ''}`;
-  $('picnicTotal').textContent = `TOTAL ${fmt(credits(stake, f.total))}`;
+  $('picnicTotal').textContent = `TOTAL ${amt(credits(stake, f.total))}`;
   $('picnicMsg').textContent = f.done ? (Object.values(opened).includes('ants') ? 'The ants found the picnic!' : 'Every hamper opened!')
     : `Find the prizes · avoid the ${W.picnic_ants} ant nests`;
 }
@@ -1282,7 +1361,7 @@ async function playGolden(round, f, token) {
   let value = f.start;
   const show = () => {
     $('goldenValue').textContent = `${value}x`;
-    $('goldenWin').textContent = `WIN ${fmt(credits(stake, value))}`;
+    $('goldenWin').textContent = `WIN ${amt(credits(stake, value))}`;
     $('goldenGlow').style.transform = `scale(${1 + Math.min(1, value / W.golden_max) * 0.5})`;
   };
   $('goldenMax').textContent = `MAX ${W.golden_max}x`;
@@ -1367,7 +1446,7 @@ async function playFreeSpins(round, f, token, baseWon) {
       sfx.bonusTrigger();
       await banner(`+${W.retrigger} FREE SPINS!`, '3 more grills', 1500);
     }
-    setWinText(`${name} · won ${fmt(won)}`, won > 0);
+    setWinText(`${name} · won ${amt(won)}`, won > 0);
     await sleep(T(250));
   }
   guard(token);

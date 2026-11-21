@@ -144,6 +144,8 @@ class Table:
             raise Rejected(f"The maximum bet is {s.max_bet:,}.")
         if mode != "spin" and not config.HEIST_BUYS:
             raise Rejected("Bonus buys are switched off on this server.")
+        if mode != "spin" and config.BUY_MAX_BET and bet > config.BUY_MAX_BET:
+            raise Rejected(f"Bonus buys go up to a bet of {config.BUY_MAX_BET:,}.")
         stake = E.stake_for(bet, mode)
         async with p.lock:
             wager = await Wager.create(self.db, self.guild_id, p.user_id, stake, GAME)
@@ -266,6 +268,7 @@ class HeistHub:
             "cash_top": max(E.CASH_VALUES), "locker_top": max(E.LOCKER_VALUES),
             "buys": ({k: {**v, "price": E.PRICES[k]} for k, v in E.BUYS.items()} if config.HEIST_BUYS else {}),
             "scale": sc, "rtp": self.rtp, "max_win": E.MAX_WIN, "min_bet": s.min_bet, "max_bet": s.max_bet,
+            "buy_max_bet": config.BUY_MAX_BET,
             "restart_amount": config.RESTART_AMOUNT, "restart_presses": max(1, config.RESTART_PRESSES),
             "big_win": BIG_WIN,
         }

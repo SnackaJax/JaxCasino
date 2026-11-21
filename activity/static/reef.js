@@ -9,7 +9,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const fmt = (n) => Math.round(n).toLocaleString('en-US');
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const BET_STEPS = [10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 25000, 50000, 100000, 250000, 500000, 1000000];
+const BET_STEPS = [10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 25000, 50000, 100000, 250000, 500000,
+  1e6, 2.5e6, 5e6, 1e7, 2.5e7, 5e7, 1e8, 2.5e8, 5e8, 1e9];
 const COLS = 7, ROWS = 7;
 const PAYING = ['shell', 'pearl', 'urchin', 'star', 'clown', 'puffer', 'jelly', 'turtle'];
 const COLOR = { shell: '#ff7fa3', pearl: '#e3d6ff', urchin: '#b06bff', star: '#ffb43d', clown: '#ff8a3d', puffer: '#ffd23f',
@@ -109,11 +110,18 @@ function toast(text, good = false) {
   t.textContent = text; t.classList.remove('hidden'); t.classList.toggle('good', good);
   clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.add('hidden'), 3200);
 }
+// big amounts are shortened (247.2M, 1B, 2.5T) where room is tight; the full number is in the tooltip
 function shortAmount(n) {
-  if (n >= 1e9) return `${(n / 1e9).toFixed(n >= 1e10 ? 1 : 2)}B`;
-  if (n >= 1e6) return `${(n / 1e6).toFixed(n >= 1e8 ? 1 : 2)}M`;
+  for (const [d, u] of [[1e12, 'T'], [1e9, 'B'], [1e6, 'M']]) {
+    const x = n / d, t = +x.toFixed(x >= 100 ? 1 : 2);
+    if (t >= 1) return `${t}${u}`;
+  }
   return fmt(n);
 }
+// a bet: in full below a million, short from there (2.5M, 1B)
+const betText = (v) => (v >= 1e6 ? shortAmount(v) : fmt(v));
+// a win or a price: short from a billion, and from a million on phones
+const amt = (v) => (v >= 1e9 || (v >= 1e6 && window.innerWidth < 560) ? shortAmount(v) : fmt(v));
 function setShownBalance(v, bumpIt = false) {
   shownBalance = v;
   $('balance').textContent = window.innerWidth < 560 && v >= 1e6 ? shortAmount(v) : fmt(v);
@@ -121,7 +129,7 @@ function setShownBalance(v, bumpIt = false) {
   if (bumpIt) { const b = $('balance').parentElement; b.classList.remove('bump'); void b.offsetWidth; b.classList.add('bump'); }
 }
 function setWinText(text, won = false) { $('winText').textContent = text; $('winBar').classList.toggle('won', won); }
-function setLastWin(v) { $('lastWin').textContent = window.innerWidth < 560 && v >= 1e6 ? shortAmount(v) : fmt(v); $('lastWin').classList.toggle('on', v > 0); }
+function setLastWin(v) { $('lastWin').textContent = amt(v); $('lastWin').title = `${fmt(v)} credits`; $('lastWin').classList.toggle('on', v > 0); }
 function banner(main, sub = '', ms = 1500, kind = '') {
   $('bannerMain').textContent = main; $('bannerSub').textContent = sub;
   const b = $('banner'); b.className = `banner ${kind}`; void b.offsetWidth;
@@ -131,6 +139,7 @@ function setBusy(v) {
   busy = v;
   $('spinBtn').classList.toggle('busy', v);
   $('betUp').disabled = v; $('betDown').disabled = v;
+  $('bet').parentElement.classList.toggle('locked', v);
   $('buyBtn').disabled = v;
   renderBroke();
 }
@@ -154,7 +163,8 @@ function fitBet() {
   if (!steps.includes(bet)) bet = steps.reduce((a, b) => (Math.abs(b - bet) < Math.abs(a - bet) ? b : a), steps[0]);
 }
 function renderBet() {
-  $('bet').textContent = bet >= 1e6 ? shortAmount(bet) : fmt(bet);
+  $('bet').textContent = betText(bet);
+  $('bet').title = `${fmt(bet)} credits`;
   try { localStorage.setItem('reef-bet', String(bet)); } catch (e) { /* storage blocked */ }
   renderBuys();
 }
@@ -164,8 +174,55 @@ function stepBet(dir) {
   const i = clamp(steps.indexOf(bet) + dir, 0, steps.length - 1);
   if (steps[i] !== bet) { bet = steps[i]; sfx.bet(dir > 0); renderBet(); }
 }
-$('betUp').addEventListener('click', () => stepBet(1));
-$('betDown').addEventListener('click', () => stepBet(-1));
+// hold + or − to keep stepping (faster the longer it's held); tap the bet itself to pick any step at once
+function holdToStep(btn, dir) {
+  let timer = null;
+  const stop = () => { clearTimeout(timer); timer = null; };
+  const repeat = (ms) => {
+    timer = setTimeout(() => { if (busy || btn.disabled) { stop(); return; } stepBet(dir); repeat(Math.max(60, ms * 0.8)); }, ms);
+  };
+  btn.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0 || btn.disabled) return;
+    stop(); stepBet(dir); repeat(420);
+  });
+  for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) btn.addEventListener(ev, stop);
+  btn.addEventListener('click', (e) => { if (e.detail === 0) stepBet(dir); });   // Enter / Space on the button
+  btn.addEventListener('contextmenu', (e) => e.preventDefault());
+}
+holdToStep($('betUp'), 1);
+holdToStep($('betDown'), -1);
+const betModal = document.createElement('div');
+betModal.className = 'modal hidden'; betModal.id = 'betModal';
+betModal.innerHTML = `<div class="modal-card bet-card"><button class="icon-btn modal-close" id="betClose" aria-label="Close">✕</button>
+  <h2>Choose your bet</h2><div class="bet-grid" id="betGrid"></div><p class="buy-note" id="betNote"></p></div>`;
+document.body.appendChild(betModal);
+const betVal = $('bet').parentElement;
+betVal.classList.add('pick');
+betVal.setAttribute('role', 'button'); betVal.tabIndex = 0; betVal.title = 'Choose your bet';
+function openBetPicker() {
+  if (busy || !W) return;
+  unlock(); sfx.click();
+  const steps = allowedSteps();
+  $('betGrid').innerHTML = steps.map((v) => `<button class="bet-opt${v === bet ? ' on' : ''}${v > balance ? ' over' : ''}"
+    data-v="${v}" title="${fmt(v)}">${betText(v)}</button>`).join('');
+  const buyMax = Object.keys(W.buys || {}).length && W.buy_max_bet;
+  $('betNote').textContent = buyMax && steps.some((v) => v > buyMax) ? `Bonus buys go up to a bet of ${betText(buyMax)}.` : '';
+  betModal.classList.remove('hidden');
+  const on = $('betGrid').querySelector('.on');
+  if (on) on.focus({ preventScroll: true });
+}
+betVal.addEventListener('click', openBetPicker);
+betVal.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); openBetPicker(); } });
+$('betGrid').addEventListener('click', (e) => {
+  const b = e.target.closest('.bet-opt');
+  if (!b) return;
+  const v = Number(b.dataset.v);
+  if (v !== bet && !busy) { sfx.bet(v > bet); bet = v; renderBet(); }
+  betModal.classList.add('hidden');
+});
+$('betClose').addEventListener('click', () => betModal.classList.add('hidden'));
+betModal.addEventListener('click', (e) => { if (e.target === betModal) betModal.classList.add('hidden'); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') betModal.classList.add('hidden'); });
 $('spinBtn').addEventListener('click', () => {
   unlock();
   if (autoOn && busy) { setAuto(false); return; }
@@ -176,7 +233,8 @@ $('stage').addEventListener('click', (e) => {
   if (busy && !e.target.closest('.bigwin')) skipRequested = true;   // tap the reef to hurry the cascade up
 });
 document.addEventListener('keydown', (e) => {
-  if (e.code === 'Space' && !e.repeat && $('infoModal').classList.contains('hidden') && $('buyModal').classList.contains('hidden')) {
+  if (e.code === 'Space' && !e.repeat && $('infoModal').classList.contains('hidden') && $('buyModal').classList.contains('hidden')
+    && $('betModal').classList.contains('hidden')) {
     e.preventDefault();
     $('spinBtn').click();
   }
@@ -230,14 +288,14 @@ function avatarHtml(p) {
 function renderPlayers() {
   $('playerCount').textContent = players.length ? `(${players.length})` : '';
   $('players').innerHTML = players.map((p) => {
-    const text = p.status === 'spinning' ? 'spinning…' : p.last_win ? `last win ${fmt(p.last_win)}` : (p.online ? 'on the reef' : 'away');
+    const text = p.status === 'spinning' ? 'spinning…' : p.last_win ? `last win ${amt(p.last_win)}` : (p.online ? 'on the reef' : 'away');
     return `<div class="player${p.id === myId ? ' me' : ''}${p.online ? '' : ' offline'}">${avatarHtml(p)}
       <div class="p-info"><div class="p-name">${esc(p.name)}${p.id === myId ? ' (you)' : ''}</div>
       <div class="p-status">${esc(text)}</div></div></div>`;
   }).join('');
 }
 function feedHtml(it) {
-  const amount = it.amount ? ` <span class="amt">${fmt(it.amount)}</span>` : '';
+  const amount = it.amount ? ` <span class="amt" title="${fmt(it.amount)}">${amt(it.amount)}</span>` : '';
   return `<div class="feed-item ${it.kind}"><b>${esc(it.name)}</b> ${esc(it.text)}${amount}</div>`;
 }
 function renderFeed() {
@@ -248,7 +306,7 @@ function onFeed(item) {
   if (item.id === myId) return;
   const el = document.createElement('div');
   el.className = item.kind;
-  el.innerHTML = `${item.kind === 'win' ? '🎉' : '🐙'} <b>${esc(item.name)}</b> ${esc(item.text)}${item.amount ? ` <b>${fmt(item.amount)}</b>` : ''}`;
+  el.innerHTML = `${item.kind === 'win' ? '🎉' : '🐙'} <b>${esc(item.name)}</b> ${esc(item.text)}${item.amount ? ` <b>${amt(item.amount)}</b>` : ''}`;
   $('feedPop').prepend(el);
   setTimeout(() => el.remove(), 5200);
   sfx.feed();
@@ -532,7 +590,7 @@ function setupInfo() {
     ${Object.keys(W.buys).length ? `<h3>Bonus buys</h3>
     <p>BUY skips the wait: a spin that starts with the Tide Meter already charged. ${Object.values(W.buys).map((b) =>
       `<b>${esc(b.name)}</b> costs ${b.price}x your bet and starts at ${b.meter} charges (pays back ${(b.rtp * 100).toFixed(1)}%).`).join(' ')}
-    Everything else about the spin is the same as a normal one.</p>` : ''}
+    Everything else about the spin is the same as a normal one.${W.buy_max_bet ? ` Bonus buys go up to a bet of ${betText(W.buy_max_bet)}.` : ''}</p>` : ''}
     <h3>Everyone on the reef</h3>
     <p>Everybody plays their own board. Everyone in this server with Reef Rush open is on the same reef: the panel shows what the
     others are doing, and big wins (${W.big_win}x and up) and the Kraken are announced to everyone.</p>
@@ -561,15 +619,34 @@ function setupBuys() {
   }
   renderBuys();
 }
+// bonus buys go up to W.buy_max_bet: above it the buys are greyed out, with a button to drop the bet to the limit
+function buyLimitStep() {
+  const s = allowedSteps().filter((v) => v <= W.buy_max_bet);
+  return s.length ? s[s.length - 1] : null;
+}
+function renderBuyLimit() {
+  if (!$('buyLimit')) $('buys').insertAdjacentHTML('beforebegin', '<p class="buy-limit hidden" id="buyLimit"></p>');
+  const el = $('buyLimit');
+  const over = buyTooBig();
+  el.classList.toggle('hidden', !over);
+  if (!over) return;
+  const to = buyLimitStep();
+  el.innerHTML = `Bonus buys go up to a bet of <b>${betText(W.buy_max_bet)}</b>.`
+    + (to ? ` <button class="buy-limit-btn" id="buyLimitBtn">Bet ${betText(to)}</button>` : '');
+  if (to) $('buyLimitBtn').addEventListener('click', () => { sfx.bet(false); bet = to; renderBet(); });
+}
+function buyTooBig() { return Boolean(W && W.buy_max_bet && bet > W.buy_max_bet); }
 function renderBuys() {
   if (!W || !Object.keys(W.buys || {}).length) return;
-  $('buyBet').textContent = fmt(bet);
+  $('buyBet').textContent = betText(bet);
+  renderBuyLimit();
   for (const k of Object.keys(W.buys)) {
     const el = $(`price-${k}`);
     if (!el) continue;
     const cost = stakeFor(k);
-    el.textContent = fmt(cost);
-    el.parentElement.disabled = cost > balance;
+    el.textContent = amt(cost);
+    el.title = `${fmt(cost)} credits`;
+    el.parentElement.disabled = cost > balance || buyTooBig();
   }
 }
 $('buyBtn').addEventListener('click', () => {
@@ -836,11 +913,14 @@ function setMeter(v, sound = true) {
 // ================================================================== the game flow
 async function doSpin(mode = 'spin') {
   if (busy || !W) return;
+  if (mode !== 'spin' && buyTooBig()) {
+    toast(`Bonus buys go up to a bet of ${betText(W.buy_max_bet)}.`); sfx.error(); return;
+  }
   const cost = stakeFor(mode);
   if (cost > balance) {
     toast(balance < W.min_bet ? "You're out of credits."
       : mode === 'spin' ? "You don't have enough credits for that bet."
-        : `You don't have enough credits for that: ${W.buys[mode].name} costs ${fmt(cost)}.`);
+        : `You don't have enough credits for that: ${W.buys[mode].name} costs ${amt(cost)}.`);
     sfx.error(); setAuto(false); return;
   }
   setBusy(true);
@@ -944,7 +1024,7 @@ async function showWin(step, stake, cascade, total) {
     const pool = spots.length ? spots : (own.length ? own : cl.cells);
     const [lc, lr] = pool.reduce((best, cc) => ((cc[0] - cx0) ** 2 + (cc[1] - cy0) ** 2 < (best[0] - cx0) ** 2 + (best[1] - cy0) ** 2 ? cc : best));
     used.add(key(lc, lr));
-    view.labels.push({ x: lc, y: lr, text: fmt(credits(stake, cl.x)), t0: now });
+    view.labels.push({ x: lc, y: lr, text: amt(credits(stake, cl.x)), t0: now });
   }
   view.hl = hl; view.dim = true;
   if (view.kraken) view.kraken.lit = step.clusters.some((cl) => cl.cells.some(([col, r]) => cells[col][r].sym === 'kraken'));
@@ -1123,7 +1203,7 @@ function countUp(el, from, to, ms, sound = true) {
     const t0 = performance.now();
     const step = () => {
       const p = skipRequested ? 1 : clamp((performance.now() - t0) / ms, 0, 1);
-      el.textContent = fmt(from + (to - from) * (1 - (1 - p) ** 2));
+      el.textContent = amt(from + (to - from) * (1 - (1 - p) ** 2));
       if (sound && p < 1) sfx.count(p);
       if (p < 1) requestAnimationFrame(step); else resolve();
     };
@@ -1141,7 +1221,7 @@ async function finishUp(round) {
       await bigWin(pay, pay / perBet);
       send({ type: 'announce', round: round.id, what: 'win' });
     }
-    setWinText(`${round.cascades > 1 ? `${round.cascades} cascades · ` : ''}TOTAL WIN ${fmt(pay)}`, true);
+    setWinText(`${round.cascades > 1 ? `${round.cascades} cascades · ` : ''}TOTAL WIN ${amt(pay)}`, true);
   } else {
     setWinText(round.surge ? 'The tide turned… no win this time' : 'No win this time');
   }

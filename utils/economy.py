@@ -13,6 +13,11 @@ def fmt(amount: int) -> str:
     return f"**{amount:,}** {config.COIN}"
 
 
+def buy_limit_note() -> str:
+    """The sentence a slot's paytable adds about BUY_MAX_BET (empty when buys have no limit)."""
+    return f" Bonus buys go up to a bet of {fmt(config.BUY_MAX_BET)}." if config.BUY_MAX_BET else ""
+
+
 def fmt_mult(mult: float) -> str:
     return f"{mult:,.2f}x"
 
@@ -132,7 +137,9 @@ async def take_bet(interaction: discord.Interaction, raw: str, game: str, price:
         await send_panel(interaction)
         return None
     try:
-        amount = parse_amount(raw, balance if price == 1 else int(balance / price))
+        # a buy's `half` and `all` are of the biggest bet it can be bought at (affordable, and BUY_MAX_BET at most)
+        amount = parse_amount(raw, balance if price == 1 else
+                              min(int(balance / price), config.BUY_MAX_BET or balance))
     except BetError as e:
         await send_error(interaction, str(e))
         return None
@@ -141,6 +148,9 @@ async def take_bet(interaction: discord.Interaction, raw: str, game: str, price:
         return None
     if config.MAX_BET and amount > config.MAX_BET:
         await send_error(interaction, f"The maximum bet is {fmt(config.MAX_BET)}.")
+        return None
+    if price != 1 and config.BUY_MAX_BET and amount > config.BUY_MAX_BET:
+        await send_error(interaction, f"Bonus buys go up to a bet of {fmt(config.BUY_MAX_BET)}.")
         return None
     stake = amount if price == 1 else math.ceil(amount * price - 1e-9)
     wager = await Wager.create(db, gid, uid, stake, game, channel=interaction.channel)

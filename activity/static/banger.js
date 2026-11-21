@@ -735,9 +735,11 @@ function coinShower(n = 80, dur = 2.5) {
   }
 }
 function drawParticles(dt) {
-  const w = fx.width, h = fx.height;
+  // clear in raw pixels: with the zoom below 100% (dpr < 1) a clear in scaled units missed the right and bottom
+  // edges, and every coin and spark that passed there stayed on screen as a trail
+  fxc.setTransform(1, 0, 0, 1, 0, 0);
+  fxc.clearRect(0, 0, fx.width, fx.height);
   fxc.setTransform(dpr, 0, 0, dpr, 0, 0);
-  fxc.clearRect(0, 0, w, h);
   for (let i = parts.length - 1; i >= 0; i--) {
     const p = parts[i];
     p.age += dt;

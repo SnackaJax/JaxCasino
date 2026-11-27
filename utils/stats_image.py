@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from PIL import Image, ImageDraw
 
 from utils.table_image import K, box, fit, font, s, text, text_width
+from utils import bignum
 
 W, H = 1000, 1036
 UPPER_BOTTOM = 674             # bottom of the per-game / per-day / per-hour panels
@@ -42,6 +43,8 @@ class StatsInfo:
 
 def short(n: float) -> str:
     n = int(n)
+    if abs(n) >= 10 ** 12:
+        return bignum.short(n, 1)   # 1.2T, 3.4Qa, 2.1Qi, ...
     for div, suffix in ((1_000_000_000, "B"), (1_000_000, "M"), (1_000, "k")):
         if abs(n) >= div:
             v = n / div

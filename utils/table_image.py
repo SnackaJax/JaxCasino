@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
+from utils import bignum
 
 K = 2                       # supersampling factor
 W, H = 1000, 640            # output size
@@ -78,6 +79,8 @@ class TableInfo:
 # --------------------------------------------------------------------------- helpers
 def short_amount(n: int) -> str:
     """An amount for a picture: in full below a million (25,000), short from there (2.5M, 487.5M, 1B, 2.5T)."""
+    if n >= 10 ** 15:
+        return bignum.short(n)   # 2.5Qa, 1.2Qi, ...
     if n >= 1_000_000:
         for d, u in ((10 ** 12, "T"), (10 ** 9, "B"), (10 ** 6, "M")):
             x = n / d
@@ -122,6 +125,8 @@ def fit(d: ImageDraw.ImageDraw, value: str, f, max_w: float) -> str:
 
 
 def short(n: int) -> str:
+    if n >= 10 ** 12:
+        return bignum.short(n, 1)   # 3.4T, 5.6Qa, ...
     if n >= 10_000_000_000:
         return f"{n / 1e9:.1f}B"
     if n >= 10_000_000:

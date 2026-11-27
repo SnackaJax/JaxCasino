@@ -10,7 +10,8 @@ import { say, hush, voiceOn, setVoiceOn, voiceAvailable, linkMute, speakName, sp
 const $ = (id) => document.getElementById(id);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-const fmt = (n) => Math.round(n).toLocaleString('en-US');
+// fmt: exact for any size (big balances arrive as strings of digits)
+import { fmt, num, minus, BIG_UNITS, huge } from './money.js';
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const MIN_BETS = [10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 25000, 50000, 100000, 250000, 500000, 1000000];   // if the server sends none
 // casino chips: value, colour, edge spots, text
@@ -43,8 +44,10 @@ const srv = () => Date.now() + offset;
 
 // an amount shortened to at most 4 digits: 2.5k, 250k, 2.5M, 9.08M, 487.5M, 12.5B (never "1000M")
 function shortNum(n) {
-  if (n < 1e3) return fmt(n);
-  for (const [d, u] of [[1e12, 'T'], [1e9, 'B'], [1e6, 'M'], [1e3, 'k']]) {
+  if (num(n) < 1e3) return fmt(n);
+  n = num(n);
+  if (huge(n)) return huge(n);
+  for (const [d, u] of [...BIG_UNITS, [1e12, 'T'], [1e9, 'B'], [1e6, 'M'], [1e3, 'k']]) {
     const x = n / d, t = +x.toFixed(x < 10 ? 2 : 1);
     if (t >= 1) return `${t}${u}`;
   }
@@ -122,7 +125,7 @@ function showBalance() {
   const el = $('balance');
   el.textContent = innerWidth < 520 && balance >= 1e6 ? shortNum(balance) : fmt(balance);
   el.parentElement.title = `${fmt(balance)} credits`;
-  if (shownBalance !== null && balance > shownBalance) {
+  if (shownBalance !== null && num(balance) > num(shownBalance)) {
     el.parentElement.animate([{ scale: 1 }, { scale: 1.15, offset: 0.4 }, { scale: 1 }], { duration: 500, easing: 'ease' });
   }
   shownBalance = balance;

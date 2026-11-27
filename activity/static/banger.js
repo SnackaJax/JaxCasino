@@ -6,7 +6,8 @@ import { sfx, unlock, isMuted, setMuted } from './banger-sound.js';
 const $ = (id) => document.getElementById(id);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-const fmt = (n) => Math.round(n).toLocaleString('en-US');
+// fmt: exact for any size (big balances arrive as strings of digits)
+import { fmt, num, minus, BIG_UNITS, huge } from './money.js';
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const BET_STEPS = [10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 25000, 50000, 100000, 250000, 500000,
   1e6, 2.5e6, 5e6, 1e7, 2.5e7, 5e7, 1e8, 2.5e8, 5e8, 1e9];
@@ -156,7 +157,9 @@ function toast(text, good = false) {
 }
 // big balances are shortened on phones (247.2M) so the header fits; the full number is in the tooltip
 function shortAmount(n) {
-  for (const [d, u] of [[1e12, 'T'], [1e9, 'B'], [1e6, 'M']]) {
+  n = num(n);
+  if (huge(n)) return huge(n);
+  for (const [d, u] of [...BIG_UNITS, [1e12, 'T'], [1e9, 'B'], [1e6, 'M']]) {
     const x = n / d, t = +x.toFixed(x >= 100 ? 1 : 2);
     if (t >= 1) return `${t}${u}`;
   }
@@ -846,7 +849,7 @@ async function doSpin(mode = 'spin') {
   skipRequested = false;
   stopCycle(); clearEffects(); hideScenes();
   setWinText(mode === 'spin' ? 'Good luck!' : `${W.buys[mode].name}!`);
-  setShownBalance((shownBalance ?? balance) - cost);
+  setShownBalance(minus(shownBalance ?? balance, cost));
   sfx.spinStart();
   const startedAt = performance.now();
   startReels();

@@ -166,8 +166,8 @@ async def overview_extras(db: Database, guild_id: int, period: str) -> dict:
     end = (await _one(db, "SELECT COALESCE(SUM(balance), 0) AS t FROM users WHERE guild_id=?", (guild_id,)))["t"]
     money = await _all(db, """SELECT kind, SUM(amount) AS amount, COUNT(*) AS n FROM money_log
                               WHERE guild_id=? AND ts>=? AND kind != 'pay' GROUP BY kind
-                              ORDER BY ABS(SUM(amount)) DESC""", (guild_id, since))
-    games_net = (await _one(db, "SELECT COALESCE(SUM(payout - wagered), 0) AS t FROM game_log "
+                              ORDER BY big_key(big_abs(SUM(amount))) DESC""", (guild_id, since))
+    games_net = (await _one(db, "SELECT COALESCE(SUM(big_sub(payout, wagered)), 0) AS t FROM game_log "
                                 "WHERE guild_id=? AND ts>=?", (guild_id, since)))["t"]
     steps = [{"kind": m["kind"], "amount": m["amount"], "n": m["n"]} for m in money if m["amount"]]
     steps.append({"kind": "games", "amount": games_net, "n": None})
@@ -240,19 +240,19 @@ async def _wealth(db: Database, guild_id: int, since: float, b: Buckets) -> list
 async def _records(db: Database, guild_id: int, since: float) -> dict:
     cols = "user_id, game, wagered, payout, ts"
     out = {
-        "wins": await _all(db, f"""SELECT {cols} FROM game_log WHERE {PLAYED} AND payout > wagered
-                                   ORDER BY payout - wagered DESC LIMIT 8""", (guild_id, since)),
-        "multipliers": await _all(db, f"""SELECT {cols} FROM game_log WHERE {PLAYED} AND payout > wagered
+        "wins": await _all(db, f"""SELECT {cols} FROM game_log WHERE {PLAYED} AND big_cmp(payout, wagered) > 0
+                                   ORDER BY big_key(big_sub(payout, wagered)) DESC LIMIT 8""", (guild_id, since)),
+        "multipliers": await _all(db, f"""SELECT {cols} FROM game_log WHERE {PLAYED} AND big_cmp(payout, wagered) > 0
                                           ORDER BY CAST(payout AS REAL) / wagered DESC, payout DESC LIMIT 8""",
                                   (guild_id, since)),
-        "losses": await _all(db, f"""SELECT {cols} FROM game_log WHERE {PLAYED} AND payout < wagered
-                                     ORDER BY wagered - payout DESC LIMIT 8""", (guild_id, since)),
+        "losses": await _all(db, f"""SELECT {cols} FROM game_log WHERE {PLAYED} AND big_cmp(payout, wagered) < 0
+                                     ORDER BY big_key(big_sub(wagered, payout)) DESC LIMIT 8""", (guild_id, since)),
     }
     per_player = f"""SELECT user_id, COUNT(*) AS games, SUM(wagered) AS wagered, SUM(payout) AS paid,
-                            SUM(payout) - SUM(wagered) AS net
+                            big_sub(SUM(payout), SUM(wagered)) AS net
                      FROM game_log WHERE {PLAYED} GROUP BY user_id"""
-    out["winners"] = await _all(db, f"{per_player} HAVING net > 0 ORDER BY net DESC LIMIT 8", (guild_id, since))
-    out["losers"] = await _all(db, f"{per_player} HAVING net < 0 ORDER BY net LIMIT 8", (guild_id, since))
+    out["winners"] = await _all(db, f"{per_player} HAVING big_cmp(net, 0) > 0 ORDER BY big_key(net) DESC LIMIT 8", (guild_id, since))
+    out["losers"] = await _all(db, f"{per_player} HAVING big_cmp(net, 0) < 0 ORDER BY big_key(net) LIMIT 8", (guild_id, since))
     luck = f"{per_player} HAVING games >= {MIN_LUCK_GAMES}"
     out["luckiest"] = await _all(db, f"{luck} ORDER BY CAST(paid AS REAL) / wagered DESC LIMIT 8", (guild_id, since))
     out["unluckiest"] = await _all(db, f"{luck} ORDER BY CAST(paid AS REAL) / wagered LIMIT 8", (guild_id, since))
@@ -269,12 +269,12 @@ async def games(db: Database, guild_id: int, period: str) -> dict:
                                     COUNT(DISTINCT CASE WHEN wagered>0 THEN user_id END) AS players,
                                     SUM(wagered) AS wagered, SUM(payout) AS paid,
                                     SUM(CASE WHEN wagered>0 AND payout>0 THEN 1 ELSE 0 END) AS hits,
-                                    SUM(CASE WHEN wagered>0 AND payout>wagered THEN 1 ELSE 0 END) AS wins,
+                                    SUM(CASE WHEN wagered>0 AND big_cmp(payout, wagered)>0 THEN 1 ELSE 0 END) AS wins,
                                     AVG(CASE WHEN wagered>0 AND payout>0 THEN CAST(payout AS REAL) / wagered END)
                                         AS avg_multiplier,
                                     MAX(CASE WHEN wagered>0 THEN CAST(payout AS REAL) / wagered END) AS max_multiplier
                              FROM game_log WHERE guild_id=? AND ts>=? GROUP BY game
-                             HAVING SUM(wagered) > 0 ORDER BY SUM(wagered) DESC""", (guild_id, since))
+                             HAVING SUM(wagered) > 0 ORDER BY big_key(SUM(wagered)) DESC""", (guild_id, since))
     expected = expected_payback()
     by_game = {}
     for r in rows:
@@ -290,16 +290,16 @@ async def games(db: Database, guild_id: int, period: str) -> dict:
             g["timeline"][i].update(plays=r["plays"], wagered=r["wagered"], paid=r["paid"])
     for r in await _all(db, f"""SELECT * FROM (
                                     SELECT game, user_id, wagered, payout, ts, ROW_NUMBER() OVER
-                                        (PARTITION BY game ORDER BY payout - wagered DESC, ts DESC) AS rn
-                                    FROM game_log WHERE {PLAYED} AND payout > wagered) WHERE rn <= 3""",
+                                        (PARTITION BY game ORDER BY big_key(big_sub(payout, wagered)) DESC, ts DESC) AS rn
+                                    FROM game_log WHERE {PLAYED} AND big_cmp(payout, wagered) > 0) WHERE rn <= 3""",
                             (guild_id, since)):
         if r["game"] in by_game:
             by_game[r["game"]]["top_wins"].append(r)
     for r in await _all(db, f"""SELECT * FROM (
                                     SELECT game, user_id, plays, wagered, net, ROW_NUMBER() OVER
-                                        (PARTITION BY game ORDER BY wagered DESC) AS rn
+                                        (PARTITION BY game ORDER BY big_key(wagered) DESC) AS rn
                                     FROM (SELECT game, user_id, COUNT(*) AS plays, SUM(wagered) AS wagered,
-                                                 SUM(payout) - SUM(wagered) AS net
+                                                 big_sub(SUM(payout), SUM(wagered)) AS net
                                           FROM game_log WHERE {PLAYED} GROUP BY game, user_id)) WHERE rn <= 3""",
                             (guild_id, since)):
         if r["game"] in by_game:
@@ -323,7 +323,7 @@ async def player_extras(db: Database, guild_id: int, user_id: int) -> dict:
     first = today - datetime.timedelta(days=29)
     rows = {r["day"]: r for r in await _all(
         db, """SELECT date(ts, 'unixepoch', 'localtime') AS day, COUNT(*) AS games, SUM(wagered) AS wagered,
-                      SUM(payout) - SUM(wagered) AS net
+                      big_sub(SUM(payout), SUM(wagered)) AS net
                FROM game_log WHERE guild_id=? AND user_id=? AND ts>=? GROUP BY day""",
         (*args, time.mktime(first.timetuple())))}
     daily = []
@@ -334,7 +334,7 @@ async def player_extras(db: Database, guild_id: int, user_id: int) -> dict:
     # where their bets go, and their payback next to everyone's in the same games
     mine = await _all(db, """SELECT game, COUNT(*) AS plays, SUM(wagered) AS wagered, SUM(payout) AS paid
                              FROM game_log WHERE guild_id=? AND user_id=? AND wagered>0 GROUP BY game
-                             ORDER BY SUM(wagered) DESC""", args)
+                             ORDER BY big_key(SUM(wagered)) DESC""", args)
     everyone = {r["game"]: r for r in await _all(
         db, """SELECT game, SUM(wagered) AS wagered, SUM(payout) AS paid FROM game_log
                WHERE guild_id=? AND wagered>0 GROUP BY game""", (guild_id,))}

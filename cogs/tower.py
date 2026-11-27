@@ -11,6 +11,7 @@ from utils.checks import gambling_only
 from utils.economy import Wager, fmt, fmt_mult, result_color, result_line, take_bet, tag
 from utils.rng import rng
 from utils.views import OwnedView
+from utils.bignum import mul_floor
 
 FLOORS = 8
 # difficulty: (doors per floor, traps per floor)
@@ -64,7 +65,7 @@ class TowerView(OwnedView):
             if isinstance(item, Door):
                 item.disabled = self.finished
         self.cashout.disabled = self.finished or self.floor == 0
-        self.cashout.label = f"Cash out {math.floor(self.wager.stake * self.mult_at(self.floor)):,}"
+        self.cashout.label = f"Cash out {mul_floor(self.wager.stake, self.mult_at(self.floor)):,}"
 
     def tower_text(self) -> str:
         lines = []
@@ -113,7 +114,7 @@ class TowerView(OwnedView):
                 self.picks.append(door)
                 if self.floor == FLOORS:
                     m = self.mult_at(self.floor)
-                    await self.end(math.floor(self.wager.stake * m), f"🏆 You reached the top at {fmt_mult(m)}!")
+                    await self.end(mul_floor(self.wager.stake, m), f"🏆 You reached the top at {fmt_mult(m)}!")
                 else:
                     self.refresh()
             await interaction.response.edit_message(embed=self.embed(), view=self)
@@ -123,7 +124,7 @@ class TowerView(OwnedView):
             if self.finished or self.floor == 0:
                 return await interaction.response.defer()
             m = self.mult_at(self.floor)
-            await self.end(math.floor(self.wager.stake * m), f"💰 Cashed out at {fmt_mult(m)}!")
+            await self.end(mul_floor(self.wager.stake, m), f"💰 Cashed out at {fmt_mult(m)}!")
             await interaction.response.edit_message(embed=self.embed(), view=self)
 
     async def on_timeout(self) -> None:
@@ -132,7 +133,7 @@ class TowerView(OwnedView):
                 return
             if self.floor:
                 m = self.mult_at(self.floor)
-                await self.end(math.floor(self.wager.stake * m), "⏰ Timed out — auto cashed out.")
+                await self.end(mul_floor(self.wager.stake, m), "⏰ Timed out — auto cashed out.")
             else:
                 self.finished = True
                 bal = await self.wager.refund()

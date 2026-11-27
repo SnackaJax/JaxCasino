@@ -34,6 +34,7 @@ from utils import heist_engine as E
 from utils.economy import Wager
 from utils.rng import rng
 from activity.fatal import fatal_text
+from utils import bignum
 
 log = logging.getLogger("jaxcasino.activity.heist")
 
@@ -93,7 +94,7 @@ class Table:
             return
         data["now"] = now_ms()
         try:
-            await ws.send_str(json.dumps(data, separators=(",", ":")))
+            await ws.send_str(bignum.compact_dumps(data))   # big credits as strings
         except (ConnectionResetError, RuntimeError, aiohttp.ClientError):
             pass
 

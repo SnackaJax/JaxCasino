@@ -12,6 +12,7 @@ from utils.checks import gambling_only
 from utils.economy import Wager, fmt, fmt_mult, result_color, result_line, take_bet, tag
 from utils.rng import rng
 from utils.views import OwnedView
+from utils.bignum import mul_floor
 
 log = logging.getLogger("jaxcasino.crash")
 
@@ -60,7 +61,7 @@ class CrashView(OwnedView):
             embed.description = f"## 💰 {fmt_mult(self.cashed_at)}"
         embed.add_field(name="Bet", value=fmt(self.wager.stake))
         if not self.finished:
-            embed.add_field(name="Cash out now", value=fmt(math.floor(self.wager.stake * self.current)))
+            embed.add_field(name="Cash out now", value=fmt(mul_floor(self.wager.stake, self.current)))
         if self.auto:
             embed.add_field(name="Auto cash out", value=fmt_mult(self.auto))
         if self.status:
@@ -76,7 +77,7 @@ class CrashView(OwnedView):
         self.finished = True
         self.cashed_at = cashed_at
         self.stop()
-        payout = math.floor(self.wager.stake * cashed_at) if cashed_at else 0
+        payout = mul_floor(self.wager.stake, cashed_at) if cashed_at else 0
         bal = await self.wager.settle(payout)
         self.status = result_line(self.wager.stake, payout, bal)
         self.disable_all()
@@ -115,7 +116,7 @@ class CrashView(OwnedView):
                 await self.finish(None)
                 return
             self.current = m
-            self.cash_btn.label = f"Cash out {math.floor(self.wager.stake * m):,}"
+            self.cash_btn.label = f"Cash out {mul_floor(self.wager.stake, m):,}"
             try:
                 await self.message.edit(embed=self.embed(), view=self)
             except discord.HTTPException:

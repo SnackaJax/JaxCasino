@@ -18,7 +18,8 @@ let ws = null, session = null, joinInfo = null, fatal = false, retry = 0;
 const srv = () => Date.now() + offset;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const easeOut = (p) => 1 - Math.pow(1 - p, 4);
-const fmt = (n) => Math.round(n).toLocaleString('en-US');
+// fmt: exact for any size (big balances arrive as strings of digits)
+import { fmt, num, minus, BIG_UNITS, huge } from './money.js';
 function short(n) {
   if (n >= 1e6) return (n / 1e6).toFixed(n >= 1e7 ? 0 : 1).replace(/\.0$/, '') + 'M';
   if (n >= 1e3) return (n / 1e3).toFixed(n >= 1e4 ? 0 : 1).replace(/\.0$/, '') + 'k';

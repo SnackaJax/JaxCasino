@@ -11,6 +11,7 @@ from utils.checks import gambling_only
 from utils.economy import Wager, fmt, fmt_mult, result_color, result_line, take_bet, tag
 from utils.rng import rng
 from utils.views import OwnedView
+from utils.bignum import mul_floor
 
 ROWS, COLS = 4, 5
 TILES = ROWS * COLS
@@ -71,7 +72,7 @@ class MinesView(OwnedView):
             else:
                 t.disabled = self.finished
         self.cashout.disabled = self.finished or not self.revealed
-        self.cashout.label = f"Cash out {math.floor(self.wager.stake * self.mult):,}"
+        self.cashout.label = f"Cash out {mul_floor(self.wager.stake, self.mult):,}"
 
     def embed(self) -> discord.Embed:
         safe_left = TILES - self.mines - len(self.revealed)
@@ -104,7 +105,7 @@ class MinesView(OwnedView):
             else:
                 self.revealed.add(index)
                 if len(self.revealed) == TILES - self.mines:
-                    await self.end(math.floor(self.wager.stake * self.mult),
+                    await self.end(mul_floor(self.wager.stake, self.mult),
                                    f"🏆 You cleared the board at {fmt_mult(self.mult)}!")
                 else:
                     self.refresh()
@@ -114,7 +115,7 @@ class MinesView(OwnedView):
         async with self.lock:
             if self.finished or not self.revealed:
                 return await interaction.response.defer()
-            await self.end(math.floor(self.wager.stake * self.mult), f"💰 Cashed out at {fmt_mult(self.mult)}!")
+            await self.end(mul_floor(self.wager.stake, self.mult), f"💰 Cashed out at {fmt_mult(self.mult)}!")
             await interaction.response.edit_message(embed=self.embed(), view=self)
 
     async def on_timeout(self) -> None:
@@ -122,7 +123,7 @@ class MinesView(OwnedView):
             if self.finished:
                 return
             if self.revealed:
-                await self.end(math.floor(self.wager.stake * self.mult), "⏰ Timed out — auto cashed out.")
+                await self.end(mul_floor(self.wager.stake, self.mult), "⏰ Timed out — auto cashed out.")
             else:
                 self.finished = True
                 bal = await self.wager.refund()

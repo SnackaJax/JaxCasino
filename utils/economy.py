@@ -5,6 +5,7 @@ import math
 import discord
 
 import config
+from utils.bignum import div_floor, mul_ceil, parse_decimal
 
 log = logging.getLogger("jaxcasino.bets")
 
@@ -27,28 +28,24 @@ class BetError(Exception):
 
 
 def parse_amount(raw: str, balance: int) -> int:
-    """Parses '500', '1,000', '2.5k', '1m', 'half' or 'all'."""
+    """Parses '500', '1,000', '2.5k', '1m', '1.2b', '3.4t', bigger shortcuts ('5qa', '2qi', ... see
+    bignum.SUFFIXES), 'half' or 'all'. Exact at any size (no float in between)."""
     s = str(raw).strip().lower().replace(",", "").replace("_", "").replace(" ", "")
     if s in ("all", "max", "allin", "all-in"):
         return balance
     if s == "half":
         return balance // 2
-    mult = 1
-    for suffix, m in (("k", 1_000), ("m", 1_000_000), ("b", 1_000_000_000)):
-        if s.endswith(suffix):
-            mult, s = m, s[: -len(suffix)]
-            break
-    try:
-        value = float(s)
-    except ValueError:
+    value = parse_decimal(s)
+    if value is None:
+        if s.startswith("-"):
+            raise BetError("The amount must be a positive number.")
         raise BetError(f"`{raw}` is not a valid amount. Enter any whole number (like `1234`), "
-                       f"or a shortcut: `2.5k`, `1m`, `half`, `all`.")
-    if not math.isfinite(value) or value <= 0:
+                       f"or a shortcut: `2.5k`, `1m`, `1.2b`, `3.4t`, `half`, `all`.")
+    if value <= 0:
         raise BetError("The amount must be a positive number.")
-    amount = value * mult
-    if amount != int(amount):
+    if value != value.to_integral_value():
         raise BetError(f"`{raw}` isn't a whole number of credits.")
-    return int(amount)
+    return int(value)
 
 
 def tag(user: discord.abc.User) -> dict:
@@ -139,7 +136,7 @@ async def take_bet(interaction: discord.Interaction, raw: str, game: str, price:
     try:
         # a buy's `half` and `all` are of the biggest bet it can be bought at (affordable, and BUY_MAX_BET at most)
         amount = parse_amount(raw, balance if price == 1 else
-                              min(int(balance / price), config.BUY_MAX_BET or balance))
+                              min(div_floor(balance, price), config.BUY_MAX_BET or balance))
     except BetError as e:
         await send_error(interaction, str(e))
         return None
@@ -152,7 +149,7 @@ async def take_bet(interaction: discord.Interaction, raw: str, game: str, price:
     if price != 1 and config.BUY_MAX_BET and amount > config.BUY_MAX_BET:
         await send_error(interaction, f"Bonus buys go up to a bet of {fmt(config.BUY_MAX_BET)}.")
         return None
-    stake = amount if price == 1 else math.ceil(amount * price - 1e-9)
+    stake = amount if price == 1 else mul_ceil(amount, price, eps=1e-9)
     wager = await Wager.create(db, gid, uid, stake, game, channel=interaction.channel)
     if wager is None:
         if price == 1:

@@ -11,6 +11,7 @@ from utils.cards import Card, random_card
 from utils.checks import gambling_only
 from utils.economy import Wager, fmt, fmt_mult, result_color, result_line, take_bet, tag
 from utils.views import OwnedView
+from utils.bignum import mul_floor
 
 
 def chances(card: Card) -> tuple[float, float]:
@@ -45,7 +46,7 @@ class HigherLowerView(OwnedView):
         self.higher_btn.disabled = p_hi >= 1
         self.lower_btn.label = f"Lower or same ({fmt_mult(step_mult(p_lo))})"
         self.lower_btn.disabled = p_lo >= 1
-        self.cashout_btn.label = f"Cash out {math.floor(self.wager.stake * self.mult):,}"
+        self.cashout_btn.label = f"Cash out {mul_floor(self.wager.stake, self.mult):,}"
         self.cashout_btn.disabled = self.correct == 0
 
     def embed(self) -> discord.Embed:
@@ -55,7 +56,7 @@ class HigherLowerView(OwnedView):
             embed.description += f"\nPrevious: {' → '.join(self.history[-10:])}"
         embed.add_field(name="Bet", value=fmt(self.wager.stake))
         embed.add_field(name="Multiplier", value=fmt_mult(self.mult))
-        embed.add_field(name="Cash out value", value=fmt(math.floor(self.wager.stake * self.mult)))
+        embed.add_field(name="Cash out value", value=fmt(mul_floor(self.wager.stake, self.mult)))
         if self.status:
             embed.add_field(name="Result", value=self.status, inline=False)
         if self.finished:
@@ -114,7 +115,7 @@ class HigherLowerView(OwnedView):
         async with self.lock:
             if self.finished or self.correct == 0:
                 return await interaction.response.defer()
-            await self.end(math.floor(self.wager.stake * self.mult), f"💰 Cashed out at {fmt_mult(self.mult)}!")
+            await self.end(mul_floor(self.wager.stake, self.mult), f"💰 Cashed out at {fmt_mult(self.mult)}!")
             await interaction.response.edit_message(embed=self.embed(), view=self)
 
     async def on_timeout(self) -> None:
@@ -122,7 +123,7 @@ class HigherLowerView(OwnedView):
             if self.finished:
                 return
             if self.correct:
-                await self.end(math.floor(self.wager.stake * self.mult), "⏰ Timed out — auto cashed out.")
+                await self.end(mul_floor(self.wager.stake, self.mult), "⏰ Timed out — auto cashed out.")
             else:
                 self.finished = True
                 bal = await self.wager.refund()

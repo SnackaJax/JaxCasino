@@ -45,7 +45,7 @@ async def players(db: Database, guild_id: int) -> list[dict]:
     """Every player in the server with their balance, totals, time played, last activity and credits bet per game."""
     users = await _all(db, """SELECT user_id, balance, games_played, wins, losses, total_wagered, total_won,
                                      biggest_win, last_daily FROM users WHERE guild_id=?""", (guild_id,))
-    games = await _all(db, """SELECT user_id, game, SUM(wagered) AS wagered, SUM(payout) - SUM(wagered) AS net,
+    games = await _all(db, """SELECT user_id, game, SUM(wagered) AS wagered, big_sub(SUM(payout), SUM(wagered)) AS net,
                                      SUM(CASE WHEN wagered>0 THEN 1 ELSE 0 END) AS plays, MAX(ts) AS last
                               FROM game_log WHERE guild_id=? GROUP BY user_id, game""", (guild_id,))
     seen = await _all(db, """SELECT user_id, MAX(ts) AS last FROM balance_log
@@ -110,10 +110,10 @@ async def overview(db: Database, guild_id: int, period: str) -> dict:
                                      SUM(wagered) AS wagered, SUM(payout) AS paid,
                                      COUNT(DISTINCT user_id) AS players
                               FROM game_log WHERE guild_id=? AND ts>=? GROUP BY game
-                              ORDER BY SUM(wagered) DESC""", (guild_id, since))
+                              ORDER BY big_key(SUM(wagered)) DESC""", (guild_id, since))
     money = await _all(db, """SELECT kind, COUNT(*) AS n,
-                                     COALESCE(SUM(CASE WHEN amount > 0 THEN amount END), 0) AS added,
-                                     COALESCE(-SUM(CASE WHEN amount < 0 THEN amount END), 0) AS removed
+                                     COALESCE(SUM(CASE WHEN big_cmp(amount, 0) > 0 THEN amount END), 0) AS added,
+                                     COALESCE(big_neg(SUM(CASE WHEN big_cmp(amount, 0) < 0 THEN amount END)), 0) AS removed
                               FROM money_log WHERE guild_id=? AND ts>=? GROUP BY kind""", (guild_id, since))
     # per day: games won / lost / even, credits bet and paid out (local days, oldest first, empty days included)
     days = CHART_DAYS.get(period, 30)
@@ -121,9 +121,9 @@ async def overview(db: Database, guild_id: int, period: str) -> dict:
     first = today - datetime.timedelta(days=days - 1)
     start_ts = time.mktime(first.timetuple())
     rows = await _all(db, f"""SELECT date(ts, 'unixepoch', 'localtime') AS day,
-                                     SUM(CASE WHEN payout > wagered THEN 1 ELSE 0 END) AS won,
-                                     SUM(CASE WHEN payout < wagered THEN 1 ELSE 0 END) AS lost,
-                                     SUM(CASE WHEN payout = wagered THEN 1 ELSE 0 END) AS even,
+                                     SUM(CASE WHEN big_cmp(payout, wagered) > 0 THEN 1 ELSE 0 END) AS won,
+                                     SUM(CASE WHEN big_cmp(payout, wagered) < 0 THEN 1 ELSE 0 END) AS lost,
+                                     SUM(CASE WHEN big_cmp(payout, wagered) = 0 THEN 1 ELSE 0 END) AS even,
                                      SUM(wagered) AS wagered, SUM(payout) AS paid
                               FROM game_log WHERE {played} GROUP BY day""", (guild_id, start_ts))
     by_day = {r["day"]: r for r in rows}
@@ -134,7 +134,7 @@ async def overview(db: Database, guild_id: int, period: str) -> dict:
         daily.append({"day": d, "won": r.get("won", 0), "lost": r.get("lost", 0), "even": r.get("even", 0),
                       "wagered": r.get("wagered", 0), "paid": r.get("paid", 0)})
     circulation = await db.circulation_history(guild_id, since, buckets=200)
-    edits = await _one(db, "SELECT COUNT(*) AS n, COALESCE(SUM(after - before), 0) AS net FROM admin_log "
+    edits = await _one(db, "SELECT COUNT(*) AS n, COALESCE(SUM(big_sub(after, before)), 0) AS net FROM admin_log "
                            "WHERE guild_id=? AND ts>=?", (guild_id, since))
     return {
         "period": period, "since": since or None,
@@ -219,11 +219,11 @@ async def activity(db: Database, guild_id: int, before: float | None, after: flo
         params.append(after)
     sql = f"""SELECT * FROM (
                   SELECT 'g' || id AS id, ts, user_id, 'game' AS type, game AS kind, wagered, payout,
-                         payout - wagered AS delta, NULL AS other_id
+                         big_sub(payout, wagered) AS delta, NULL AS other_id
                   FROM game_log WHERE guild_id=? {cond}
                   UNION ALL
                   SELECT 'm' || id, ts, user_id, 'money', kind, NULL, NULL,
-                         CASE WHEN kind='pay' THEN -amount ELSE amount END, other_id
+                         CASE WHEN kind='pay' THEN big_neg(amount) ELSE amount END, other_id
                   FROM money_log WHERE guild_id=? {cond}
               ) ORDER BY ts DESC LIMIT ?"""
     rows = await _all(db, sql, (guild_id, *params, guild_id, *params, limit))

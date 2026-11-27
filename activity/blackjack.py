@@ -56,6 +56,8 @@ from cogs.blackjack import MAX_HANDS, card_value, draw_upcard, hand_value, is_bl
 from utils.cards import Card, new_deck
 from utils.economy import Wager
 from activity.fatal import fatal_text
+from utils.bignum import mul_floor
+from utils import bignum
 
 log = logging.getLogger("jaxcasino.activity.blackjack")
 
@@ -824,7 +826,7 @@ class Table:
                     else:
                         h.result, h.payout = "lose", 0
                 elif h.result == "blackjack":
-                    h.payout = math.floor(h.stake * 2.5)
+                    h.payout = mul_floor(h.stake, 2.5)
                 elif h.value > 21:
                     h.result, h.payout = "bust", 0
                 elif dealer_total > 21 or h.value > dealer_total:
@@ -938,7 +940,7 @@ class Room:
             return
         data["now"] = now_ms()
         try:
-            await ws.send_str(json.dumps(data, separators=(",", ":")))
+            await ws.send_str(bignum.compact_dumps(data))   # big credits as strings
         except (ConnectionResetError, RuntimeError, aiohttp.ClientError):
             pass
 

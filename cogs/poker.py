@@ -18,6 +18,7 @@ from utils.views import BaseModal, BaseView
 from utils.hand_eval import best_hand, hand_name
 from utils.rng import rng
 from utils.table_image import SeatInfo, TableInfo, render_hand, render_table
+from utils.bignum import mul_floor
 
 log = logging.getLogger("jaxcasino.poker")
 
@@ -376,7 +377,7 @@ class PokerTable:
         self.reveal = {s.user.id: hand_name(scores[id(s)]) for s in live}
         self.won = {}
         for i, (amount, eligible) in enumerate(pots):
-            rake = math.floor(amount * config.POKER_RAKE) if len(eligible) > 1 else 0
+            rake = mul_floor(amount, config.POKER_RAKE) if len(eligible) > 1 else 0
             amount -= rake
             best = max(scores[id(s)] for s in eligible)
             winners = self.order_from_dealer([s for s in eligible if scores[id(s)] == best])

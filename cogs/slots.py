@@ -23,6 +23,7 @@ from utils.economy import buy_limit_note, fmt, result_color, result_line, send_e
 from utils.rng import rng
 from utils.slot_image import SlotFrame, render, render_paylines
 from utils.views import BaseView
+from utils.bignum import mul_floor
 
 log = logging.getLogger("jaxcasino.slots")
 
@@ -43,7 +44,7 @@ def pay_scale() -> float:
 
 
 def credits(stake: int, line_bets: int) -> int:
-    return math.floor(stake * line_bets * pay_scale() / E.LINES)
+    return mul_floor(stake, line_bets, pay_scale(), div=E.LINES)
 
 
 def mult_text(x: float) -> str:

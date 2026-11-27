@@ -8,21 +8,26 @@ from typing import Any
 import aiosqlite
 
 import config
+from utils import bignum
 
 log = logging.getLogger("jaxcasino.db")
 
+# Credit amounts (balances, bets, payouts, logs) are in columns without a type: whole numbers that fit in 64 bits are
+# stored as INTEGER, bigger ones as their exact digits in TEXT, and SQL that does sums with them uses the exact
+# functions from utils/bignum.py (big_add, big_sub, big_cmp, big_key, and an exact SUM). That's what lets a balance
+# grow past SQLite's INTEGER limit (about 9.22e18) without overflowing or losing precision.
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
     guild_id      INTEGER NOT NULL,
     user_id       INTEGER NOT NULL,
-    balance       INTEGER NOT NULL,
+    balance NOT NULL,
     last_daily    REAL    NOT NULL DEFAULT 0,
     games_played  INTEGER NOT NULL DEFAULT 0,
     wins          INTEGER NOT NULL DEFAULT 0,
     losses        INTEGER NOT NULL DEFAULT 0,
-    total_wagered INTEGER NOT NULL DEFAULT 0,
-    total_won     INTEGER NOT NULL DEFAULT 0,
-    biggest_win   INTEGER NOT NULL DEFAULT 0,
+    total_wagered NOT NULL DEFAULT 0,
+    total_won NOT NULL DEFAULT 0,
+    biggest_win NOT NULL DEFAULT 0,
     PRIMARY KEY (guild_id, user_id)
 );
 CREATE TABLE IF NOT EXISTS settings (
@@ -37,13 +42,13 @@ CREATE TABLE IF NOT EXISTS escrow (
     id       INTEGER PRIMARY KEY AUTOINCREMENT,
     guild_id INTEGER NOT NULL,
     user_id  INTEGER NOT NULL,
-    amount   INTEGER NOT NULL,
+    amount NOT NULL,
     game     TEXT    NOT NULL,
     created  REAL    NOT NULL
 );
 CREATE TABLE IF NOT EXISTS lottery (
     guild_id   INTEGER PRIMARY KEY,
-    pot        INTEGER NOT NULL DEFAULT 0,
+    pot NOT NULL DEFAULT 0,
     draw_at    REAL    NOT NULL,
     channel_id INTEGER
 );
@@ -53,8 +58,8 @@ CREATE TABLE IF NOT EXISTS game_log (
     guild_id INTEGER NOT NULL,
     user_id  INTEGER NOT NULL,
     game     TEXT    NOT NULL,
-    wagered  INTEGER NOT NULL,
-    payout   INTEGER NOT NULL,
+    wagered NOT NULL,
+    payout NOT NULL,
     ts       REAL    NOT NULL
 );
 CREATE INDEX IF NOT EXISTS game_log_guild_ts ON game_log (guild_id, ts);
@@ -65,7 +70,7 @@ CREATE TABLE IF NOT EXISTS money_log (
     guild_id INTEGER NOT NULL,
     user_id  INTEGER,
     kind     TEXT    NOT NULL,
-    amount   INTEGER NOT NULL,
+    amount NOT NULL,
     ts       REAL    NOT NULL,
     other_id INTEGER
 );
@@ -91,8 +96,8 @@ CREATE TABLE IF NOT EXISTS balance_log (
     guild_id INTEGER NOT NULL,
     user_id  INTEGER NOT NULL,
     ts       REAL    NOT NULL,
-    balance  INTEGER NOT NULL,
-    delta    INTEGER NOT NULL,
+    balance NOT NULL,
+    delta NOT NULL,
     source   TEXT
 );
 CREATE INDEX IF NOT EXISTS balance_log_user_ts ON balance_log (guild_id, user_id, ts);
@@ -101,7 +106,7 @@ WHEN NEW.balance != OLD.balance
 BEGIN
     INSERT INTO balance_log (guild_id, user_id, ts, balance, delta)
     VALUES (NEW.guild_id, NEW.user_id, (julianday('now') - 2440587.5) * 86400.0, NEW.balance,
-            NEW.balance - OLD.balance);
+            big_sub(NEW.balance, OLD.balance));
 END;
 CREATE TRIGGER IF NOT EXISTS balance_log_on_insert AFTER INSERT ON users
 BEGIN
@@ -117,7 +122,7 @@ CREATE TABLE IF NOT EXISTS shop_jobs (
     due       REAL    NOT NULL,
     target_id INTEGER,
     buyer_id  INTEGER NOT NULL,
-    cost      INTEGER NOT NULL
+    cost NOT NULL
 );
 -- Balance changes made in the admin panel (admin_panel/), with the balance before and after and an optional note.
 -- The change itself is also in money_log (kind 'admin'), like an /admin command's.
@@ -126,9 +131,9 @@ CREATE TABLE IF NOT EXISTS admin_log (
     guild_id INTEGER NOT NULL,
     user_id  INTEGER NOT NULL,
     action   TEXT    NOT NULL,
-    amount   INTEGER NOT NULL,
-    before   INTEGER NOT NULL,
-    after    INTEGER NOT NULL,
+    amount NOT NULL,
+    before NOT NULL,
+    after NOT NULL,
     note     TEXT,
     ts       REAL    NOT NULL
 );
@@ -154,6 +159,20 @@ CREATE TABLE IF NOT EXISTS streaks (
 """
 
 
+# Every column that holds credits, per table (boost_log belongs to an optional panel extension).
+MONEY_COLUMNS = {
+    "users": ["balance", "total_wagered", "total_won", "biggest_win"],
+    "escrow": ["amount"],
+    "lottery": ["pot"],
+    "game_log": ["wagered", "payout"],
+    "money_log": ["amount"],
+    "balance_log": ["balance", "delta"],
+    "shop_jobs": ["cost"],
+    "admin_log": ["amount", "before", "after"],
+    "boost_log": ["wagered", "payout"],
+}
+
+
 def _check_amount(amount: int) -> None:
     """Debits and transfers only take amounts of 0 or more: a negative amount would quietly add credits instead.
     Every caller already checks its input; this is a last line of defence."""
@@ -168,16 +187,83 @@ class Database:
         self.lock = asyncio.Lock()
 
     async def connect(self) -> None:
-        self.conn = await aiosqlite.connect(self.path)
-        self.conn.row_factory = aiosqlite.Row
+        # bignum.Connection adds the exact money functions; money_row turns big amounts (stored as text) into ints
+        self.conn = await aiosqlite.connect(self.path, factory=bignum.Connection)
+        self.conn.row_factory = bignum.money_row
         await self.conn.execute("PRAGMA journal_mode=WAL")
         cur = await self.conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='balance_log'")
         new_balance_log = await cur.fetchone() is None
+        await self._migrate_big_money()
         await self.conn.executescript(SCHEMA)
         await self.conn.commit()
         if new_balance_log:
             await self._rebuild_balance_history()
         await self._migrate_money_log()
+
+    async def _migrate_big_money(self) -> None:
+        """Databases made before credits could pass SQLite's 64-bit INTEGER limit: rebuilds every table with a money
+        column typed INTEGER so the column has no type (SQLite then keeps huge amounts as exact text instead of turning
+        them into an inexact REAL), and turns amounts that already became a REAL back into whole numbers. A copy of the
+        database is made first, next to it (<name>.before-big-credits-<time>.db). Runs once; does nothing on a new
+        database or one already converted."""
+        todo = []
+        for table, cols in MONEY_COLUMNS.items():
+            cur = await self.conn.execute(f"PRAGMA table_info({table})")
+            info = {r["name"]: (r["type"] or "").upper() for r in await cur.fetchall()}
+            if any(info.get(c) not in (None, "") for c in cols):
+                todo.append((table, [c for c in cols if c in info]))
+        if not todo:
+            return
+        stem = self.path[:-3] if self.path.endswith(".db") else self.path
+        backup = f"{stem}.before-big-credits-{time.strftime('%Y%m%d-%H%M%S')}.db"
+        await self.conn.execute("VACUUM INTO ?", (backup,))
+        log.info("Credits past the 64-bit limit: backed up the database to %s, converting %s",
+                 backup, ", ".join(t for t, _ in todo))
+        await self.conn.commit()
+        await self.conn.execute("BEGIN IMMEDIATE")
+        try:
+            # the balance_log triggers name tables being rebuilt; SCHEMA creates them again (with exact sums)
+            await self.conn.execute("DROP TRIGGER IF EXISTS balance_log_on_update")
+            await self.conn.execute("DROP TRIGGER IF EXISTS balance_log_on_insert")
+            fixed = 0
+            for table, cols in todo:
+                fixed += await self._untype_money(table, cols)
+            await self.conn.commit()
+        except Exception:
+            await self.conn.rollback()
+            raise
+        log.info("Converted the money columns of %d table(s); %d amount(s) that had become inexact decimals are whole "
+                 "numbers again.", len(todo), fixed)
+
+    async def _untype_money(self, table: str, cols: list[str]) -> int:
+        """Rebuilds `table` with `cols` untyped (same rows, indexes and ids). Returns how many REAL amounts it fixed."""
+        import re
+        cur = await self.conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (table,))
+        sql = (await cur.fetchone())["sql"]
+        cur = await self.conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name=? AND sql IS NOT NULL", (table,))
+        indexes = [r["sql"] for r in await cur.fetchall()]
+        new = f"{table}__big_credits"
+        new_sql = re.sub(rf"^CREATE TABLE\s+(IF NOT EXISTS\s+)?[\"`\[]?{table}[\"`\]]?", f"CREATE TABLE {new}", sql,
+                         flags=re.I)
+        for c in cols:
+            new_sql, n = re.subn(rf"(\b{c}\s+)INTEGER\b\s*", r"\1", new_sql, flags=re.I)
+            if not n:
+                raise RuntimeError(f"couldn't find the type of {table}.{c} in {sql!r}")
+        cur = await self.conn.execute(f"PRAGMA table_info({table})")
+        names = [r["name"] for r in await cur.fetchall()]
+        cur = await self.conn.execute(
+            f"SELECT COUNT(*) AS n FROM {table} WHERE " + " OR ".join(f"typeof({c})='real'" for c in cols))
+        fixed = (await cur.fetchone())["n"]
+        await self.conn.execute(f"DROP TABLE IF EXISTS {new}")
+        await self.conn.execute(new_sql)
+        select = ", ".join(f"big_add({n}, 0)" if n in cols else n for n in names)   # big_add: a REAL as a whole number
+        await self.conn.execute(f"INSERT INTO {new} ({', '.join(names)}) SELECT {select} FROM {table}")
+        await self.conn.execute(f"DROP TABLE {table}")
+        await self.conn.execute(f"ALTER TABLE {new} RENAME TO {table}")
+        for ix in indexes:
+            await self.conn.execute(ix)
+        return fixed
 
     async def _migrate_money_log(self) -> None:
         """Adds money_log.other_id (payment recipient) to databases made before it existed, then fills it in for
@@ -259,9 +345,9 @@ class Database:
         for u in users:
             gid, uid = u["guild_id"], u["user_id"]
             cur = await self.conn.execute(
-                """SELECT ts, payout - wagered AS delta FROM game_log WHERE guild_id=? AND user_id=?
+                """SELECT ts, big_sub(payout, wagered) AS delta FROM game_log WHERE guild_id=? AND user_id=?
                    UNION ALL
-                   SELECT ts, CASE WHEN kind='pay' THEN -amount ELSE amount END FROM money_log
+                   SELECT ts, CASE WHEN kind='pay' THEN big_neg(amount) ELSE amount END FROM money_log
                    WHERE guild_id=? AND user_id=?
                    ORDER BY ts DESC""", (gid, uid, gid, uid))
             events = await cur.fetchall()
@@ -344,7 +430,7 @@ class Database:
             await self._ensure(guild_id, user_id)
             before = await self._balance(guild_id, user_id)
             await self.conn.execute(
-                "UPDATE users SET balance = MAX(0, balance + ?) WHERE guild_id=? AND user_id=?",
+                "UPDATE users SET balance = big_max(0, big_add(balance, ?)) WHERE guild_id=? AND user_id=?",
                 (amount, guild_id, user_id),
             )
             after = await self._balance(guild_id, user_id)
@@ -388,7 +474,7 @@ class Database:
         """Who has credits in escrow in this server right now (open bets, poker buy-ins, table chips): user_id, amount."""
         cur = await self.conn.execute(
             """SELECT user_id, SUM(amount) AS amount FROM escrow WHERE guild_id=?
-               GROUP BY user_id ORDER BY amount DESC""", (guild_id,))
+               GROUP BY user_id ORDER BY big_key(SUM(amount)) DESC""", (guild_id,))
         return await cur.fetchall()
 
     async def reset_economy(self, guild_id: int, note: str = "Economy reset") -> dict:
@@ -430,7 +516,7 @@ class Database:
         async with self.lock:
             await self._ensure(guild_id, user_id)
             cur = await self.conn.execute(
-                "UPDATE users SET balance = balance - ? WHERE guild_id=? AND user_id=? AND balance >= ?",
+                "UPDATE users SET balance = big_sub(balance, ?) WHERE guild_id=? AND user_id=? AND big_cmp(balance, ?) >= 0",
                 (amount, guild_id, user_id, amount),
             )
             await self.conn.commit()
@@ -442,14 +528,14 @@ class Database:
             await self._ensure(guild_id, from_id)
             await self._ensure(guild_id, to_id)
             cur = await self.conn.execute(
-                "UPDATE users SET balance = balance - ? WHERE guild_id=? AND user_id=? AND balance >= ?",
+                "UPDATE users SET balance = big_sub(balance, ?) WHERE guild_id=? AND user_id=? AND big_cmp(balance, ?) >= 0",
                 (amount, guild_id, from_id, amount),
             )
             if cur.rowcount != 1:
                 await self.conn.rollback()
                 return False
             await self.conn.execute(
-                "UPDATE users SET balance = balance + ? WHERE guild_id=? AND user_id=?",
+                "UPDATE users SET balance = big_add(balance, ?) WHERE guild_id=? AND user_id=?",
                 (amount, guild_id, to_id),
             )
             await self._money(guild_id, from_id, "pay", amount, other_id=to_id)
@@ -465,7 +551,7 @@ class Database:
             )
             before = await self._total(guild_id)
             await self.conn.executemany(
-                "UPDATE users SET balance = MAX(0, balance + ?) WHERE guild_id=? AND user_id=?",
+                "UPDATE users SET balance = big_max(0, big_add(balance, ?)) WHERE guild_id=? AND user_id=?",
                 [(amount, guild_id, uid) for uid in user_ids],
             )
             await self._money(guild_id, None, "admin", await self._total(guild_id) - before)
@@ -486,7 +572,7 @@ class Database:
                 await self.conn.commit()
                 return False, next_at, row["balance"]
             await self.conn.execute(
-                "UPDATE users SET balance = balance + ?, last_daily=? WHERE guild_id=? AND user_id=?",
+                "UPDATE users SET balance = big_add(balance, ?), last_daily=? WHERE guild_id=? AND user_id=?",
                 (config.DAILY_AMOUNT, now, guild_id, user_id),
             )
             await self._money(guild_id, user_id, "claim", config.DAILY_AMOUNT)
@@ -520,7 +606,7 @@ class Database:
                 return "paid", balance, last_pay + config.RESTART_PAY_BLOCK
             if grant:
                 await self.conn.execute(
-                    "UPDATE users SET balance = balance + ? WHERE guild_id=? AND user_id=?",
+                    "UPDATE users SET balance = big_add(balance, ?) WHERE guild_id=? AND user_id=?",
                     (config.RESTART_AMOUNT, guild_id, user_id))
                 await self._money(guild_id, user_id, "restart", config.RESTART_AMOUNT)
                 balance += config.RESTART_AMOUNT
@@ -536,8 +622,8 @@ class Database:
             await self._ensure(guild_id, user_id)
             await self.conn.execute(
                 """UPDATE users SET games_played = games_played + 1, wins = wins + ?, losses = losses + ?,
-                   total_wagered = total_wagered + ?, total_won = total_won + ?,
-                   biggest_win = MAX(biggest_win, ?)
+                   total_wagered = big_add(total_wagered, ?), total_won = big_add(total_won, ?),
+                   biggest_win = big_max(biggest_win, ?)
                    WHERE guild_id=? AND user_id=?""",
                 (win, loss, wagered, payout, profit, guild_id, user_id),
             )
@@ -546,7 +632,7 @@ class Database:
 
     async def leaderboard(self, guild_id: int, limit: int = 10) -> list[aiosqlite.Row]:
         cur = await self.conn.execute(
-            "SELECT user_id, balance FROM users WHERE guild_id=? ORDER BY balance DESC LIMIT ?",
+            "SELECT user_id, balance FROM users WHERE guild_id=? ORDER BY big_key(balance) DESC LIMIT ?",
             (guild_id, limit),
         )
         return await cur.fetchall()
@@ -558,7 +644,7 @@ class Database:
         async with self.lock:
             await self._ensure(guild_id, user_id)
             cur = await self.conn.execute(
-                "UPDATE users SET balance = balance - ? WHERE guild_id=? AND user_id=? AND balance >= ?",
+                "UPDATE users SET balance = big_sub(balance, ?) WHERE guild_id=? AND user_id=? AND big_cmp(balance, ?) >= 0",
                 (amount, guild_id, user_id, amount),
             )
             if cur.rowcount != 1:
@@ -578,7 +664,7 @@ class Database:
                 await self.conn.commit()
                 return "owned"
             cur = await self.conn.execute(
-                "UPDATE users SET balance = balance - ? WHERE guild_id=? AND user_id=? AND balance >= ?",
+                "UPDATE users SET balance = big_sub(balance, ?) WHERE guild_id=? AND user_id=? AND big_cmp(balance, ?) >= 0",
                 (price, guild_id, user_id, price),
             )
             if cur.rowcount != 1:
@@ -666,7 +752,7 @@ class Database:
             await self.conn.execute("DELETE FROM escrow WHERE id=?", (escrow_id,))
             if payout:
                 await self.conn.execute(
-                    "UPDATE users SET balance = balance + ? WHERE guild_id=? AND user_id=?",
+                    "UPDATE users SET balance = big_add(balance, ?) WHERE guild_id=? AND user_id=?",
                     (payout, guild_id, user_id),
                 )
             await self.conn.commit()
@@ -683,7 +769,7 @@ class Database:
             for r in rows:
                 await self._ensure(r["guild_id"], r["user_id"])
                 await self.conn.execute(
-                    "UPDATE users SET balance = balance + ? WHERE guild_id=? AND user_id=?",
+                    "UPDATE users SET balance = big_add(balance, ?) WHERE guild_id=? AND user_id=?",
                     (r["amount"], r["guild_id"], r["user_id"]),
                 )
             await self.conn.execute("DELETE FROM escrow")
@@ -788,7 +874,7 @@ class Database:
         async with self.lock:
             await self._ensure(guild_id, user_id)
             cur = await self.conn.execute(
-                "UPDATE users SET balance = balance - ? WHERE guild_id=? AND user_id=? AND balance >= ?",
+                "UPDATE users SET balance = big_sub(balance, ?) WHERE guild_id=? AND user_id=? AND big_cmp(balance, ?) >= 0",
                 (cost, guild_id, user_id, cost),
             )
             if cur.rowcount != 1:
@@ -800,7 +886,7 @@ class Database:
                 (guild_id, user_id, count),
             )
             await self.conn.execute(
-                "UPDATE lottery SET pot = pot + ?, channel_id=? WHERE guild_id=?",
+                "UPDATE lottery SET pot = big_add(pot, ?), channel_id=? WHERE guild_id=?",
                 (cost, channel_id, guild_id),
             )
             await self._log_game(guild_id, user_id, "lottery", cost, 0)
@@ -824,11 +910,11 @@ class Database:
             if winner_id is not None:
                 await self._ensure(guild_id, winner_id)
                 await self.conn.execute(
-                    "UPDATE users SET balance = balance + ? WHERE guild_id=? AND user_id=?",
+                    "UPDATE users SET balance = big_add(balance, ?) WHERE guild_id=? AND user_id=?",
                     (pot + bonus, guild_id, winner_id),
                 )
                 await self.conn.execute(
-                    "UPDATE lottery SET pot = pot - ? WHERE guild_id=?", (pot, guild_id)
+                    "UPDATE lottery SET pot = big_sub(pot, ?) WHERE guild_id=?", (pot, guild_id)
                 )
                 await self._log_game(guild_id, winner_id, "lottery", 0, pot + bonus)
             await self.conn.execute("DELETE FROM lottery_tickets WHERE guild_id=?", (guild_id,))
@@ -898,26 +984,28 @@ class Database:
         args = (guild_id, user_id, since)
         cur = await self.conn.execute(
             """SELECT COALESCE(SUM(CASE WHEN wagered>0 THEN 1 ELSE 0 END),0) AS games,
-                      COALESCE(SUM(CASE WHEN wagered>0 AND payout>wagered THEN 1 ELSE 0 END),0) AS wins,
+                      COALESCE(SUM(CASE WHEN wagered>0 AND big_cmp(payout, wagered)>0 THEN 1 ELSE 0 END),0) AS wins,
                       COALESCE(SUM(wagered),0) AS wagered, COALESCE(SUM(payout),0) AS paid
                FROM game_log WHERE guild_id=? AND user_id=? AND ts>=?""", args)
         totals = dict(await cur.fetchone())
         cur = await self.conn.execute(
             """SELECT game, SUM(CASE WHEN wagered>0 THEN 1 ELSE 0 END) AS plays, SUM(wagered) AS wagered,
-                      SUM(payout) - SUM(wagered) AS net
+                      big_sub(SUM(payout), SUM(wagered)) AS net
                FROM game_log WHERE guild_id=? AND user_id=? AND ts>=? GROUP BY game""", args)
         per_game = [dict(r) for r in await cur.fetchall()]
         cur = await self.conn.execute(
-            """SELECT game, wagered, payout, payout - wagered AS profit, ts FROM game_log
-               WHERE guild_id=? AND user_id=? AND ts>=? AND payout > wagered ORDER BY profit DESC LIMIT 1""", args)
+            """SELECT game, wagered, payout, big_sub(payout, wagered) AS profit, ts FROM game_log
+               WHERE guild_id=? AND user_id=? AND ts>=? AND big_cmp(payout, wagered) > 0
+               ORDER BY big_key(big_sub(payout, wagered)) DESC LIMIT 1""", args)
         best = await cur.fetchone()
         cur = await self.conn.execute(
-            """SELECT game, wagered, payout, wagered - payout AS loss, ts FROM game_log
-               WHERE guild_id=? AND user_id=? AND ts>=? AND wagered > payout ORDER BY loss DESC LIMIT 1""", args)
+            """SELECT game, wagered, payout, big_sub(wagered, payout) AS loss, ts FROM game_log
+               WHERE guild_id=? AND user_id=? AND ts>=? AND big_cmp(wagered, payout) > 0
+               ORDER BY big_key(big_sub(wagered, payout)) DESC LIMIT 1""", args)
         worst = await cur.fetchone()
         cur = await self.conn.execute(
             """SELECT kind, COUNT(*) AS n,
-                      COALESCE(SUM(CASE WHEN kind='pay' THEN -amount ELSE amount END), 0) AS amount
+                      COALESCE(SUM(CASE WHEN kind='pay' THEN big_neg(amount) ELSE amount END), 0) AS amount
                FROM money_log WHERE guild_id=? AND user_id=? AND ts>=? GROUP BY kind""", args)
         money = {r["kind"]: dict(r) for r in await cur.fetchall()}
         # Payments are logged under the sender; this player's incoming ones are found by recipient.
@@ -945,24 +1033,24 @@ class Database:
 
         totals = await one(f"""SELECT COUNT(*) AS games, COALESCE(SUM(wagered),0) AS wagered,
                                   COUNT(DISTINCT user_id) AS players,
-                                  COALESCE(SUM(CASE WHEN payout > wagered THEN 1 ELSE 0 END),0) AS wins
+                                  COALESCE(SUM(CASE WHEN big_cmp(payout, wagered) > 0 THEN 1 ELSE 0 END),0) AS wins
                                FROM game_log WHERE {played}""")
         paid = await one("SELECT COALESCE(SUM(payout),0) AS paid FROM game_log WHERE guild_id=? AND ts>=?")
         games = await many("""SELECT game, SUM(CASE WHEN wagered>0 THEN 1 ELSE 0 END) AS plays,
                                      SUM(wagered) AS wagered, SUM(payout) AS paid
                               FROM game_log WHERE guild_id=? AND ts>=?
-                              GROUP BY game ORDER BY SUM(wagered) DESC""")
-        biggest_win = await one("""SELECT user_id, game, wagered, payout, payout - wagered AS profit FROM game_log
-                                   WHERE guild_id=? AND ts>=? AND payout > wagered
-                                   ORDER BY payout - wagered DESC LIMIT 1""")
-        biggest_loss = await one("""SELECT user_id, game, wagered, payout, wagered - payout AS loss FROM game_log
-                                    WHERE guild_id=? AND ts>=? AND wagered > payout
-                                    ORDER BY wagered - payout DESC LIMIT 1""")
+                              GROUP BY game ORDER BY big_key(SUM(wagered)) DESC""")
+        biggest_win = await one("""SELECT user_id, game, wagered, payout, big_sub(payout, wagered) AS profit
+                                   FROM game_log WHERE guild_id=? AND ts>=? AND big_cmp(payout, wagered) > 0
+                                   ORDER BY big_key(big_sub(payout, wagered)) DESC LIMIT 1""")
+        biggest_loss = await one("""SELECT user_id, game, wagered, payout, big_sub(wagered, payout) AS loss
+                                    FROM game_log WHERE guild_id=? AND ts>=? AND big_cmp(wagered, payout) > 0
+                                    ORDER BY big_key(big_sub(wagered, payout)) DESC LIMIT 1""")
         best_mult = await one(f"""SELECT user_id, game, wagered, payout, CAST(payout AS REAL) / wagered AS mult
-                                  FROM game_log WHERE {played} AND game != 'poker' AND wagered >= ?
+                                  FROM game_log WHERE {played} AND game != 'poker' AND big_cmp(wagered, ?) >= 0
                                   ORDER BY mult DESC, payout DESC LIMIT 1""", (guild_id, since, config.MIN_BET))
         per_user = await many("""SELECT user_id, SUM(CASE WHEN wagered>0 THEN 1 ELSE 0 END) AS plays,
-                                        SUM(wagered) AS wagered, SUM(payout) - SUM(wagered) AS net
+                                        SUM(wagered) AS wagered, big_sub(SUM(payout), SUM(wagered)) AS net
                                  FROM game_log WHERE guild_id=? AND ts>=? GROUP BY user_id""")
         hours = await many(f"""SELECT CAST(strftime('%H', ts, 'unixepoch', 'localtime') AS INTEGER) AS hour,
                                       COUNT(*) AS n FROM game_log WHERE {played} GROUP BY hour""")
@@ -972,12 +1060,13 @@ class Database:
                                FROM game_log WHERE {played} GROUP BY day""",
                            (guild_id, start_day - 86400))
         money = await many("""SELECT kind, COUNT(*) AS n, SUM(amount) AS amount,
-                                     COALESCE(SUM(CASE WHEN amount > 0 THEN amount END), 0) AS added,
-                                     COALESCE(-SUM(CASE WHEN amount < 0 THEN amount END), 0) AS removed
+                                     COALESCE(SUM(CASE WHEN big_cmp(amount, 0) > 0 THEN amount END), 0) AS added,
+                                     COALESCE(big_neg(SUM(CASE WHEN big_cmp(amount, 0) < 0 THEN amount END)), 0)
+                                         AS removed
                               FROM money_log WHERE guild_id=? AND ts>=? GROUP BY kind""")
         economy = await one("""SELECT COALESCE(SUM(balance),0) AS circulating, COUNT(*) AS accounts
                                FROM users WHERE guild_id=?""", (guild_id,))
-        richest = await one("SELECT user_id, balance FROM users WHERE guild_id=? ORDER BY balance DESC LIMIT 1",
+        richest = await one("SELECT user_id, balance FROM users WHERE guild_id=? ORDER BY big_key(balance) DESC LIMIT 1",
                             (guild_id,))
         in_play = await one("SELECT COALESCE(SUM(amount),0) AS a FROM escrow WHERE guild_id=?", (guild_id,))
         pot = await one("SELECT COALESCE(SUM(pot),0) AS p FROM lottery WHERE guild_id=?", (guild_id,))

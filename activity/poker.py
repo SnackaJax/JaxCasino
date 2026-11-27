@@ -34,6 +34,8 @@ from utils.cards import Card, new_deck
 from utils.hand_eval import best_hand, hand_name
 from utils.rng import rng
 from activity.fatal import fatal_text
+from utils.bignum import mul_floor
+from utils import bignum
 
 log = logging.getLogger("jaxcasino.activity.poker")
 
@@ -539,7 +541,7 @@ class Table:
         self.won = {}
         payouts = []
         for i, (amount, eligible) in enumerate(pots):
-            rake = math.floor(amount * config.POKER_RAKE) if len(eligible) > 1 else 0
+            rake = mul_floor(amount, config.POKER_RAKE) if len(eligible) > 1 else 0
             amount -= rake
             best = max(scores[id(s)] for s in eligible)
             winners = self.order_from_dealer([s for s in eligible if scores[id(s)] == best])
@@ -690,7 +692,7 @@ class Room:
             return
         data["now"] = now_ms()
         try:
-            await ws.send_str(json.dumps(data, separators=(",", ":")))
+            await ws.send_str(bignum.compact_dumps(data))   # big credits as strings
         except (ConnectionResetError, RuntimeError, aiohttp.ClientError):
             pass
 

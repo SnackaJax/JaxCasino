@@ -13,6 +13,7 @@ from utils.checks import gambling_only
 from utils.economy import fmt, result_color, result_line, send_error, take_bet, tag
 from utils.rng import rng
 from utils.shop import get_prices, price_text
+from utils.bignum import mul_floor
 
 log = logging.getLogger("jaxcasino.cockfight")
 
@@ -99,7 +100,7 @@ class Cockfight(commands.Cog):
         won = rng.random() < chance
         if won:
             new_wins = await db.chicken_won(gid, uid)
-            payout = math.floor(wager.stake * mult)
+            payout = mul_floor(wager.stake, mult)
             outcome = (f"🏆 **Your chicken won!** {opp} runs off in shame.\n"
                        f"It now has **{new_wins:,}** win{'s' if new_wins != 1 else ''}, and its win chance in the "
                        f"next fight is **{pct(win_chance(new_wins))}**.")

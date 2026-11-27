@@ -11,6 +11,26 @@ export class ApiError extends Error {
 /** Fired when the server says we're not signed in (the session expired or the password changed). */
 export const SIGNED_OUT = "jaxcasino:signed-out"
 
+// Credits past 2^53 (where JavaScript numbers stop being exact) come as tagged strings, "<digits>n"
+// (admin_panel/server.py). They're turned into numbers here, so sorting, charts and sums work as before, and their
+// exact digits are kept so credits() in format.ts can still show them to the credit.
+const EXACT = new Map<number, string>()
+const BIG = /^-?\d+n$/
+
+/** The exact digits of a big amount that came from the server as this number, if any. */
+export const exactDigits = (n: number): string | undefined => EXACT.get(n)
+
+function revive(_key: string, value: unknown): unknown {
+  if (typeof value === "string" && BIG.test(value)) {
+    const digits = value.slice(0, -1)
+    const n = Number(digits)
+    if (EXACT.size > 100_000) EXACT.clear()
+    EXACT.set(n, digits)
+    return n
+  }
+  return value
+}
+
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await fetch(path, {
     method,
@@ -20,7 +40,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   })
   let data: unknown = null
   try {
-    data = await res.json()
+    data = JSON.parse(await res.text(), revive)
   } catch {
     // not JSON (the bot is restarting, for instance)
   }

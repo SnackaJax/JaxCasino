@@ -16,6 +16,7 @@ from utils.checks import gambling_only
 from utils.economy import fmt, result_color, result_line, take_bet, Wager, tag
 from utils.rng import rng
 from utils.views import OwnedView
+from utils.bignum import mul_floor
 
 MAX_HANDS = 4
 DECKS = 6
@@ -330,7 +331,7 @@ async def start_game(interaction: discord.Interaction, wager: Wager) -> None:
         if is_blackjack(player) and is_blackjack(dealer):
             payout, view.hands[0].result = wager.stake, "Push ➖"
         elif is_blackjack(player):
-            payout, view.hands[0].result = math.floor(wager.stake * 2.5), "Blackjack! 🎉"
+            payout, view.hands[0].result = mul_floor(wager.stake, 2.5), "Blackjack! 🎉"
         else:
             payout, view.hands[0].result = 0, DEALER_BLACKJACK
         bal = await wager.settle(payout)

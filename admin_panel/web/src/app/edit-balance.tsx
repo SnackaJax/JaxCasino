@@ -4,7 +4,7 @@ import { ArrowRightIcon } from "@phosphor-icons/react"
 import { toast } from "sonner"
 
 import { api, ApiError } from "@/app/api"
-import { credits, parseAmount, signed } from "@/app/format"
+import { credits, creditsBig, parseAmount, parseAmountExact, signed, signedBig, toBig } from "@/app/format"
 import { PlayerAvatar } from "@/app/player-avatar"
 import { Button } from "@/components/ui/button"
 import {
@@ -57,22 +57,36 @@ export function EditBalanceDialog({
   }, [target])
 
   const amount = parseAmount(raw)
+  const exactAmount = parseAmountExact(raw) // what's sent: numbers past 2^53 aren't exact in JavaScript
   const before = shown?.balance ?? 0
   const after =
     amount === null ? null : action === "set" ? amount : action === "add" ? before + amount : Math.max(0, before - amount)
   const valid = amount !== null && (action === "set" || amount > 0) && after !== before
+  // the same sum to the credit, for the preview (numbers past 2^53 aren't exact in JavaScript)
+  const beforeBig = toBig(before)
+  const amountBig = exactAmount === null ? null : BigInt(exactAmount)
+  const afterBig =
+    amountBig === null
+      ? null
+      : action === "set"
+        ? amountBig
+        : action === "add"
+          ? beforeBig + amountBig
+          : beforeBig > amountBig
+            ? beforeBig - amountBig
+            : BigInt(0)
 
   const save = useMutation({
     mutationFn: () =>
       api.post<{ before: number; after: number }>(`/api/players/${target!.id}/balance`, {
         guild: guildId,
         action,
-        amount,
+        amount: exactAmount !== null && exactAmount.length > 15 ? exactAmount : amount,
         note: note.trim() || null,
       }),
     onSuccess: (res) => {
       toast.success(`${target!.name}: ${credits(res.before)} → ${credits(res.after)}`, {
-        description: `${signed(res.after - res.before)} credits. Nothing was posted in Discord.`,
+        description: `${signedBig(toBig(res.after) - toBig(res.before))} credits. Nothing was posted in Discord.`,
       })
       for (const key of ["players", "overview", "player", "edits", "activity", "guilds"]) {
         qc.invalidateQueries({ queryKey: [key] })
@@ -154,7 +168,7 @@ export function EditBalanceDialog({
           <div className="bg-muted/50 flex items-center justify-between rounded-md border px-3 py-2 text-sm tabular">
             <span className="text-muted-foreground">{credits(before)}</span>
             <ArrowRightIcon className="text-muted-foreground size-4" />
-            <span className="font-medium">{after === null ? "—" : credits(after)}</span>
+            <span className="font-medium">{afterBig === null ? "—" : creditsBig(afterBig)}</span>
             <span
               className={cn(
                 "min-w-20 text-right",
@@ -162,7 +176,7 @@ export function EditBalanceDialog({
                 after !== null && after < before && "text-error"
               )}
             >
-              {after === null ? "" : signed(after - before)}
+              {afterBig === null ? "" : signedBig(afterBig - beforeBig)}
             </span>
           </div>
           {action === "remove" && amount !== null && amount > before ? (

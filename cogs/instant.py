@@ -10,6 +10,7 @@ import config
 from utils.checks import gambling_only
 from utils.economy import fmt, fmt_mult, result_color, result_line, send_error, take_bet, tag
 from utils.rng import rng
+from utils.bignum import mul_floor
 
 BET_DESC = "Any amount (e.g. 1234) or a shortcut: 2.5k, 1m, half, all"
 
@@ -73,7 +74,7 @@ class Instant(commands.Cog):
         await asyncio.sleep(1.5)
         result = rng.choice(["heads", "tails"])
         won = result == side.value
-        payout = math.floor(wager.stake * mult) if won else 0
+        payout = mul_floor(wager.stake, mult) if won else 0
         bal = await wager.settle(payout)
         embed = discord.Embed(
             title="🪙 Coinflip",
@@ -105,7 +106,7 @@ class Instant(commands.Cog):
             return
         roll = rng.randint(1, 100)
         won = roll < target if direction.value == "under" else roll > target
-        payout = math.floor(wager.stake * mult) if won else 0
+        payout = mul_floor(wager.stake, mult) if won else 0
         bal = await wager.settle(payout)
         embed = discord.Embed(
             title="🎲 Dice",
@@ -173,7 +174,7 @@ class Instant(commands.Cog):
             embed.description = f"{wheel_strip(pos)}\n\n{WHEEL_LEGEND}"
             await interaction.edit_original_response(embed=embed)
         mult = WHEEL[final]
-        payout = math.floor(wager.stake * mult)
+        payout = mul_floor(wager.stake, mult)
         bal = await wager.settle(payout)
         embed.description = (f"{wheel_strip(final)}\n\nLanded on **{fmt_mult(mult)}**\n\n"
                              f"{result_line(wager.stake, payout, bal)}\n\n{WHEEL_LEGEND}")

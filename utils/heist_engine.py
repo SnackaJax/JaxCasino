@@ -46,6 +46,7 @@ from __future__ import annotations
 
 import math
 import sys
+from utils.bignum import mul_floor, mul_round
 
 VW = VH = 8                     # the whole vault
 N = VW * VH
@@ -636,7 +637,7 @@ def price(mode: str) -> float:
 
 def stake_for(bet: int, mode: str) -> int:
     """What a round in this mode costs, in credits."""
-    return max(1, round(bet * price(mode)))
+    return max(1, mul_round(bet, price(mode)))
 
 
 def scale(mode: str, rtp: float, bet: int | None = None, stake: int | None = None) -> float:
@@ -647,7 +648,7 @@ def scale(mode: str, rtp: float, bet: int | None = None, stake: int | None = Non
 
 
 def credits(bet: int, x: float, sc: float) -> int:
-    return math.floor(bet * x * sc + 1e-9)
+    return mul_floor(bet, x, sc, eps=1e-9)
 
 
 def payout(bet: int, stake: int, rnd: Round, rtp: float) -> int:

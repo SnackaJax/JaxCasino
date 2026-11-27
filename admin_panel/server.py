@@ -53,18 +53,27 @@ from aiohttp import web
 
 from admin_panel import insights, queries
 from database import Database
+from utils import bignum
 from utils.crux import MAX_SECONDS, MIN_SECONDS, describe, parse_duration
 
 log = logging.getLogger("jaxcasino.adminpanel")
 
 HERE = Path(__file__).parent
 STATIC = HERE / "static"
+
+
+def json_response(data: Any, **kwargs) -> web.Response:
+    """web.json_response, with whole numbers past 2^53 sent as tagged strings ("123...n"): the page turns them into
+    numbers for its charts and sums and keeps the digits to show them exactly (web/src/app/api.ts)."""
+    kwargs.setdefault("dumps", bignum.tagged_dumps)
+    return web.json_response(data, **kwargs)
+
+
 COOKIE = "jaxcasino_admin"
 STATE_COOKIE = "jaxcasino_admin_state"   # ties Discord's answer to the sign-in this browser started
 DISCORD = "https://discord.com"
 DISCORD_CALLBACK = "/api/auth/discord"
 SESSION_DAYS = 30
-MAX_AMOUNT = 10**15
 MAX_NOTE = 200
 # Game switches per server, saved in the settings table (database.get_setting). Each: (default, label for the log).
 # bj_double_side: blackjack in the Activity pays side bet wins out, then doubles them (activity/blackjack.py).
@@ -138,18 +147,18 @@ class AdminPanel:
                 # Changes only as JSON from this page: a form or script on another website can't send JSON here
                 # without the browser asking first (and we never say yes), and its Origin wouldn't match.
                 if request.content_type != "application/json":
-                    return web.json_response({"error": "JSON only"}, status=415)
+                    return json_response({"error": "JSON only"}, status=415)
                 origin = request.headers.get("Origin")
                 if origin and origin.split("://", 1)[-1] != request.host:
-                    return web.json_response({"error": "wrong origin"}, status=403)
+                    return json_response({"error": "wrong origin"}, status=403)
             open_paths = ("/api/session", "/api/login", "/api/auth/discord/start", DISCORD_CALLBACK)
             if path not in open_paths and not self.valid_session(request.cookies.get(COOKIE)):
-                return web.json_response({"error": "not signed in"}, status=401)
+                return json_response({"error": "not signed in"}, status=401)
             try:
                 resp = await handler(request)
             except web.HTTPException as e:
                 if e.status >= 400:
-                    return web.json_response({"error": e.text or e.reason}, status=e.status)
+                    return json_response({"error": e.text or e.reason}, status=e.status)
                 raise
             resp.headers["Cache-Control"] = "no-store"
         else:
@@ -169,13 +178,13 @@ class AdminPanel:
     async def session(self, request: web.Request) -> web.Response:
         ok = self.valid_session(request.cookies.get(COOKIE))
         out = {"authenticated": ok, "discord": self.discord_ready()}
-        return web.json_response(out)
+        return json_response(out)
 
     async def login(self, request: web.Request) -> web.Response:
         now = time.time()
         self._fails = [t for t in self._fails if now - t < LOGIN_WINDOW]
         if len(self._fails) >= LOGIN_FAILS:
-            return web.json_response({"error": "Too many wrong passwords. Wait a minute and try again."},
+            return json_response({"error": "Too many wrong passwords. Wait a minute and try again."},
                                      status=429)
         try:
             body = await request.json()
@@ -185,8 +194,8 @@ class AdminPanel:
         if not hmac.compare_digest(given.encode(), self.password.encode()):
             self._fails.append(now)
             log.warning("Admin panel: wrong password from %s", request.remote)
-            return web.json_response({"error": "Wrong password."}, status=401)
-        resp = web.json_response({"authenticated": True})
+            return json_response({"error": "Wrong password."}, status=401)
+        resp = json_response({"authenticated": True})
         resp.set_cookie(COOKIE, self.new_session(), max_age=SESSION_DAYS * 86400, httponly=True,
                         samesite="Strict", path="/")
         log.info("Admin panel: signed in from %s", request.remote)
@@ -269,7 +278,7 @@ class AdminPanel:
         return self.signed_in()
 
     async def logout(self, request: web.Request) -> web.Response:
-        resp = web.json_response({"authenticated": False})
+        resp = json_response({"authenticated": False})
         resp.del_cookie(COOKIE, path="/")
         return resp
 
@@ -283,7 +292,7 @@ class AdminPanel:
             out.append({"id": str(gid), "name": g.get("name") or f"Server {gid}", "icon": g.get("icon"),
                         "players": counts.get(gid, 0), "bot_in_server": gid in known})
         out.sort(key=lambda g: (-g["players"], g["name"].lower()))
-        return web.json_response(out)
+        return json_response(out)
 
     async def overview(self, request: web.Request) -> web.Response:
         gid = self.guild_arg(request)
@@ -292,7 +301,7 @@ class AdminPanel:
         for e in recent:
             e.update(self.who(gid, e["user_id"]))
         data["edits"] = recent
-        return web.json_response(data)
+        return json_response(data)
 
     def period_arg(self, request: web.Request) -> str:
         period = request.query.get("period", "24h")
@@ -321,13 +330,13 @@ class AdminPanel:
         gid = self.guild_arg(request)
         data = await insights.overview_extras(self.db, gid, self.period_arg(request))
         data["people"] = self.people(gid, data)
-        return web.json_response(data)
+        return json_response(data)
 
     async def games(self, request: web.Request) -> web.Response:
         gid = self.guild_arg(request)
         data = await insights.games(self.db, gid, self.period_arg(request))
         data["people"] = self.people(gid, data)
-        return web.json_response(data)
+        return json_response(data)
 
     async def player_insights(self, request: web.Request) -> web.Response:
         gid, uid = self.guild_arg(request), self.user_arg(request)
@@ -335,14 +344,14 @@ class AdminPanel:
             raise web.HTTPNotFound(text="no such player")
         data = await insights.player_extras(self.db, gid, uid)
         data["people"] = self.people(gid, data)
-        return web.json_response(data)
+        return json_response(data)
 
     async def players(self, request: web.Request) -> web.Response:
         gid = self.guild_arg(request)
         rows = await queries.players(self.db, gid)
         for r in rows:
             r.update(self.who(gid, r["id"]))
-        return web.json_response(rows)
+        return json_response(rows)
 
     def user_arg(self, request: web.Request) -> int:
         raw = request.match_info["user_id"]
@@ -356,7 +365,7 @@ class AdminPanel:
             raise web.HTTPNotFound(text="no such player")
         data = await queries.player_detail(self.db, gid, uid)
         data["player"] = {"id": str(uid), **self.who(gid, uid)}
-        return web.json_response(data)
+        return json_response(data)
 
     def window_arg(self, request: web.Request) -> tuple[float, float]:
         """?from=&to= as unix times, clipped to now (from missing or 0 = from the start)."""
@@ -375,7 +384,7 @@ class AdminPanel:
         gid = self.guild_arg(request)
         start, end = self.window_arg(request)
         points = await self.db.circulation_history(gid, start, buckets=400, until=end)
-        return web.json_response({"from": start, "to": end, "points": [[ts, total] for ts, total in points]})
+        return json_response({"from": start, "to": end, "points": [[ts, total] for ts, total in points]})
 
     async def player_history(self, request: web.Request) -> web.Response:
         gid, uid = self.guild_arg(request), self.user_arg(request)
@@ -383,7 +392,7 @@ class AdminPanel:
             raise web.HTTPNotFound(text="no such player")
         start, end = self.window_arg(request)
         points = await queries.balance_window(self.db, gid, uid, start, end)
-        return web.json_response({"from": start, "to": end, "points": points})
+        return json_response({"from": start, "to": end, "points": points})
 
     async def give_crux(self, request: web.Request) -> web.Response:
         """Puts a player on a crux from the panel, the same break /crux gives. {guild, duration}. A running crux
@@ -400,9 +409,9 @@ class AdminPanel:
             raise web.HTTPBadRequest(text="guild is missing")
         seconds = parse_duration(str(body.get("duration", "")))
         if seconds is None:
-            return web.json_response({"error": "Can't read that duration. Try 2h, 3d, 1w or 1d12h."}, status=400)
+            return json_response({"error": "Can't read that duration. Try 2h, 3d, 1w or 1d12h."}, status=400)
         if not MIN_SECONDS <= seconds <= MAX_SECONDS:
-            return web.json_response({"error": "A crux lasts from 10 minutes up to a year."}, status=400)
+            return json_response({"error": "A crux lasts from 10 minutes up to a year."}, status=400)
         if not await queries.player_exists(self.db, int(gid), uid):
             raise web.HTTPNotFound(text="no such player")
         until = time.time() + seconds
@@ -412,7 +421,7 @@ class AdminPanel:
             await self.directory.crux_started(int(gid), uid, until)
         except Exception:
             log.exception("Couldn't close %s's casino games for their crux", uid)
-        return web.json_response({"ok": True, "until": until})
+        return json_response({"ok": True, "until": until})
 
     async def remove_crux(self, request: web.Request) -> web.Response:
         """Ends a player's /crux early (only an admin can). {guild}"""
@@ -425,9 +434,9 @@ class AdminPanel:
         if not gid.isdigit():
             raise web.HTTPBadRequest(text="guild is missing")
         if not await self.db.remove_crux(int(gid), uid):
-            return web.json_response({"error": "That player doesn't have a crux (any more)."}, status=409)
+            return json_response({"error": "That player doesn't have a crux (any more)."}, status=409)
         log.info("Admin panel: ended the crux of %s in %s", uid, gid)
-        return web.json_response({"ok": True})
+        return json_response({"ok": True})
 
     async def edit_balance(self, request: web.Request) -> web.Response:
         uid = self.user_arg(request)
@@ -446,8 +455,10 @@ class AdminPanel:
         gid = int(gid)
         if action not in ("set", "add", "remove"):
             raise web.HTTPBadRequest(text="action must be set, add or remove")
-        if not isinstance(amount, int) or isinstance(amount, bool) or not 0 <= amount <= MAX_AMOUNT:
-            raise web.HTTPBadRequest(text=f"amount must be a whole number from 0 to {MAX_AMOUNT:,}")
+        if isinstance(amount, str):   # the page sends amounts past 2^53 as digits (JavaScript numbers can't hold them)
+            amount = bignum.parse_short(amount)
+        if not isinstance(amount, int) or isinstance(amount, bool) or amount < 0:
+            raise web.HTTPBadRequest(text="amount must be a whole number of 0 or more")
         if action != "set" and amount == 0:
             raise web.HTTPBadRequest(text="amount must be more than 0")
         if note is not None:
@@ -457,7 +468,7 @@ class AdminPanel:
         before, after = await self.db.admin_edit(gid, uid, action, amount, note)
         log.info("Admin panel: %s %s for %s in %s: %s -> %s%s", action, amount, uid, gid, before, after,
                  f" ({note})" if note else "")
-        return web.json_response({"before": before, "after": after})
+        return json_response({"before": before, "after": after})
 
     @staticmethod
     def reset_phrase(gid: int) -> str:
@@ -471,7 +482,7 @@ class AdminPanel:
         """What an economy reset of this server would do, for the panel's three confirmations."""
         gid = self.guild_arg(request)
         stats = await queries.reset_preview(self.db, gid)
-        return web.json_response({**stats, "confirm": self.reset_phrase(gid),
+        return json_response({**stats, "confirm": self.reset_phrase(gid),
                                   "in_play": self.in_play_list(gid, await self.db.in_play(gid))})
 
     async def reset_economy(self, request: web.Request) -> web.Response:
@@ -489,19 +500,19 @@ class AdminPanel:
             raise web.HTTPBadRequest(text="the reset wasn't confirmed")
         result = await self.db.reset_economy(gid)
         if "in_play" in result:
-            return web.json_response({"error": "Someone has credits in play. Wait until their games end.",
+            return json_response({"error": "Someone has credits in play. Wait until their games end.",
                                       "in_play": self.in_play_list(gid, result["in_play"])}, status=409)
         log.warning("Admin panel: economy reset in %s: %s players (%s changed) set to %s, credits held %s -> %s",
                     gid, result["players"], result["changed"], result["starting_balance"], result["before"],
                     result["after"])
-        return web.json_response(result)
+        return json_response(result)
 
     async def edits(self, request: web.Request) -> web.Response:
         gid = self.guild_arg(request)
         rows = await queries.edits(self.db, gid, min(int(request.query.get("limit", "50") or 50), 500))
         for r in rows:
             r.update(self.who(gid, r["user_id"]))
-        return web.json_response(rows)
+        return json_response(rows)
 
     async def activity(self, request: web.Request) -> web.Response:
         gid = self.guild_arg(request)
@@ -520,13 +531,13 @@ class AdminPanel:
                 uid = r[key]
                 if uid is not None and uid not in names:
                     names[uid] = self.who(gid, uid)
-        return web.json_response({"rows": rows, "people": names})
+        return json_response({"rows": rows, "people": names})
 
 
     # ------------------------------------------------------------ game settings
     async def settings(self, request: web.Request) -> web.Response:
         gid = self.guild_arg(request)
-        return web.json_response({k: await self.db.get_setting(gid, k, default)
+        return json_response({k: await self.db.get_setting(gid, k, default)
                                   for k, (default, _) in GAME_SETTINGS.items()})
 
     async def change_setting(self, request: web.Request) -> web.Response:
@@ -554,7 +565,7 @@ class AdminPanel:
                 await changed(int(gid), key, value)
             except Exception:
                 log.exception("Couldn't pass %s on to the running games", key)
-        return web.json_response({"key": key, "value": value})
+        return json_response({"key": key, "value": value})
 
     # ------------------------------------------------------------ page
     async def page(self, request: web.Request) -> web.StreamResponse:

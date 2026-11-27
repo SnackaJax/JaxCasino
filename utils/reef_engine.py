@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import math
 import sys
+from utils.bignum import mul_ceil, mul_floor
 
 COLS = ROWS = 7
 N = COLS * ROWS
@@ -393,7 +394,7 @@ def price(mode: str) -> float:
 
 def stake_for(bet: int, mode: str) -> int:
     """What a round in this mode costs, in credits (rounded up, so a buy never costs less than its price)."""
-    return max(1, math.ceil(bet * price(mode) - 1e-9))
+    return max(1, mul_ceil(bet, price(mode), eps=1e-9))
 
 
 def buy_rtp(mode: str, rtp: float) -> float:
@@ -403,7 +404,7 @@ def buy_rtp(mode: str, rtp: float) -> float:
 
 def credits(stake: int, x: float, rtp: float) -> int:
     """`stake` is the bet the pays are multiples of (for a bonus buy: the bet, not the price paid)."""
-    return math.floor(stake * x * scale(rtp) + 1e-9)
+    return mul_floor(stake, x, scale(rtp), eps=1e-9)
 
 
 def payout(stake: int, rnd: Round, rtp: float, bet: int | None = None) -> int:

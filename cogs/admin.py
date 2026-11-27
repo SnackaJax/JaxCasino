@@ -9,11 +9,25 @@ from discord.ext import commands
 import config
 from cogs.serverstats import MIN_PLAYS_FOR_ODDS, ODDS_GAMES, game_name
 from utils.checks import admin_only, gambling_channels
+from utils.bignum import parse_short
 from utils.economy import fmt, send_error
 from utils.shop import ITEMS, PRICE_LABELS, get_prices, item_price_text, price_text
 from utils.views import ConfirmView
 
-MAX_AMOUNT = 10**15
+MAX_AMOUNT = 10**15   # shop prices (an integer option: Discord caps those at 2^53)
+AMOUNT_HELP = "Credits: 5000, 2.5m, 1.2b, 3.4t, 5qa ... (any size)"
+
+
+async def read_amount(interaction: discord.Interaction, raw: str, minimum: int = 1) -> int | None:
+    """An amount typed into an /admin command (any size, shortcuts allowed); sends an error and returns None if
+    it isn't one."""
+    n = parse_short(raw)
+    if n is None or n < minimum:
+        await send_error(interaction, f"`{raw}` isn't an amount of credits"
+                                      f"{' of 1 or more' if minimum else ''}. Use a whole number like `5000`, "
+                                      f"or a shortcut: `2.5m`, `1.2b`, `3.4t`.")
+        return None
+    return n
 
 log = logging.getLogger("jaxcasino.admin")
 
@@ -40,9 +54,9 @@ class Admin(commands.Cog):
 
     @admin.command(name="give", description="Give credits to a player.")
     @admin_only()
-    async def give(self, interaction: discord.Interaction, user: discord.Member,
-                   amount: app_commands.Range[int, 1, MAX_AMOUNT]):
-        if await self.refuse_bot(interaction, user):
+    @app_commands.describe(amount=AMOUNT_HELP)
+    async def give(self, interaction: discord.Interaction, user: discord.Member, amount: str):
+        if await self.refuse_bot(interaction, user) or (amount := await read_amount(interaction, amount)) is None:
             return
         bal = await self.bot.db.add_balance(interaction.guild_id, user.id, amount)
         await interaction.response.send_message(embed=admin_embed(
@@ -50,9 +64,9 @@ class Admin(commands.Cog):
 
     @admin.command(name="remove", description="Remove credits from a player (balance won't go below 0).")
     @admin_only()
-    async def remove(self, interaction: discord.Interaction, user: discord.Member,
-                     amount: app_commands.Range[int, 1, MAX_AMOUNT]):
-        if await self.refuse_bot(interaction, user):
+    @app_commands.describe(amount=AMOUNT_HELP)
+    async def remove(self, interaction: discord.Interaction, user: discord.Member, amount: str):
+        if await self.refuse_bot(interaction, user) or (amount := await read_amount(interaction, amount)) is None:
             return
         bal = await self.bot.db.add_balance(interaction.guild_id, user.id, -amount)
         await interaction.response.send_message(embed=admin_embed(
@@ -60,9 +74,9 @@ class Admin(commands.Cog):
 
     @admin.command(name="set", description="Set a player's balance to an exact amount.")
     @admin_only()
-    async def set_(self, interaction: discord.Interaction, user: discord.Member,
-                   amount: app_commands.Range[int, 0, MAX_AMOUNT]):
-        if await self.refuse_bot(interaction, user):
+    @app_commands.describe(amount=AMOUNT_HELP)
+    async def set_(self, interaction: discord.Interaction, user: discord.Member, amount: str):
+        if await self.refuse_bot(interaction, user) or (amount := await read_amount(interaction, amount, 0)) is None:
             return
         await self.bot.db.set_balance(interaction.guild_id, user.id, amount)
         await interaction.response.send_message(embed=admin_embed(
@@ -115,13 +129,17 @@ class Admin(commands.Cog):
 
     @admin.command(name="give-all", description="Give credits to every member (asks for confirmation).")
     @admin_only()
-    async def give_all(self, interaction: discord.Interaction, amount: app_commands.Range[int, 1, MAX_AMOUNT]):
-        await self._bulk(interaction, amount, give=True)
+    @app_commands.describe(amount=AMOUNT_HELP)
+    async def give_all(self, interaction: discord.Interaction, amount: str):
+        if (amount := await read_amount(interaction, amount)) is not None:
+            await self._bulk(interaction, amount, give=True)
 
     @admin.command(name="remove-all", description="Remove credits from every member (asks for confirmation).")
     @admin_only()
-    async def remove_all(self, interaction: discord.Interaction, amount: app_commands.Range[int, 1, MAX_AMOUNT]):
-        await self._bulk(interaction, amount, give=False)
+    @app_commands.describe(amount=AMOUNT_HELP)
+    async def remove_all(self, interaction: discord.Interaction, amount: str):
+        if (amount := await read_amount(interaction, amount)) is not None:
+            await self._bulk(interaction, amount, give=False)
 
     # ------------------------------------------------------------- config
     async def _toggle(self, interaction: discord.Interaction, key: str, value: int, add: bool,

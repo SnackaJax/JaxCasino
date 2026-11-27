@@ -13,6 +13,7 @@ from utils.checks import gambling_only
 from utils.economy import Wager, fmt, fmt_mult, keep_bet, send_error, take_bet, tag
 from utils.views import BaseModal, BaseView
 from utils.rng import rng
+from utils.bignum import mul_floor
 
 log = logging.getLogger("jaxcasino.horserace")
 
@@ -125,7 +126,7 @@ class Race:
         # Payouts
         results = []
         for user, horse, wager in self.bets:
-            payout = math.floor(wager.stake * self.odds[horse]) if horse == winner else 0
+            payout = mul_floor(wager.stake, self.odds[horse]) if horse == winner else 0
             await wager.settle(payout)
             if payout:
                 results.append(f"✅ {user.mention} won {fmt(payout)}")

@@ -51,6 +51,23 @@ export type GameSettings = {
   bj_double_side: boolean
 }
 
+/** What an economy reset would do (GET /api/economy/reset) */
+export type ResetPreview = {
+  players: number
+  /** players whose balance isn't the starting balance already */
+  changed: number
+  starting_balance: number
+  /** credits held by all players now, and after the reset */
+  before: number
+  after: number
+  /** the phrase POST /api/economy/reset needs as `confirm` */
+  confirm: string
+  /** credits in escrow (open bets, poker chips): the reset is refused while there are any */
+  in_play: (Person & { user_id: string; amount: number })[]
+}
+
+export type ResetResult = Omit<ResetPreview, "confirm" | "in_play">
+
 export type Guild = {
   id: string
   name: string

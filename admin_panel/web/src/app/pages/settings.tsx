@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 
 import { api, ApiError, type GameSettings, type Guild } from "@/app/api"
+import { EconomyReset } from "@/app/economy-reset"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -64,6 +65,7 @@ export function SettingsPage({ guild }: { guild: Guild }) {
             </CardContent>
           </Card>
         )}
+        <EconomyReset guild={guild} />
       </div>
     </div>
   )

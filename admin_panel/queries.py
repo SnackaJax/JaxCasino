@@ -1,9 +1,11 @@
-"""Read-only queries behind the admin panel's pages. Writes go through Database.admin_edit (database.py)."""
+"""Read-only queries behind the admin panel's pages. Writes go through Database.admin_edit and
+Database.reset_economy (database.py)."""
 from __future__ import annotations
 
 import datetime
 import time
 
+import config
 from database import Database
 
 PERIODS = {"24h": 86400, "7d": 7 * 86400, "30d": 30 * 86400, "all": 0}
@@ -184,6 +186,16 @@ async def balance_window(db: Database, guild_id: int, user_id: int, start: float
     if last is not None and (not points or points[-1][0] < end):
         points.append([end, last])
     return points
+
+
+async def reset_preview(db: Database, guild_id: int) -> dict:
+    """What an economy reset would do: players, how many of them would change, credits held now and after."""
+    start = config.STARTING_BALANCE
+    row = await _one(db, """SELECT COUNT(*) AS players, COALESCE(SUM(balance), 0) AS held,
+                                   COALESCE(SUM(balance != ?), 0) AS changed FROM users WHERE guild_id=?""",
+                     (start, guild_id))
+    return {"players": row["players"], "changed": row["changed"], "starting_balance": start,
+            "before": row["held"], "after": start * row["players"]}
 
 
 async def edits(db: Database, guild_id: int, limit: int = 50) -> list[dict]:

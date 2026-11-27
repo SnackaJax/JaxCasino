@@ -384,6 +384,46 @@ class Database:
             await self.conn.commit()
             return before, after
 
+    async def in_play(self, guild_id: int) -> list[aiosqlite.Row]:
+        """Who has credits in escrow in this server right now (open bets, poker buy-ins, table chips): user_id, amount."""
+        cur = await self.conn.execute(
+            """SELECT user_id, SUM(amount) AS amount FROM escrow WHERE guild_id=?
+               GROUP BY user_id ORDER BY amount DESC""", (guild_id,))
+        return await cur.fetchall()
+
+    async def reset_economy(self, guild_id: int, note: str = "Economy reset") -> dict:
+        """The admin panel's economy reset: every player in the server gets exactly the starting balance, in one
+        transaction. Each changed balance is logged like a panel edit (money_log kind 'admin', admin_log action 'set'
+        with `note`); balance_log fills itself through its trigger. Refused while credits are in escrow, because the
+        game holding them would pay out on top of the reset balance when it ends: returns {"in_play": rows} then.
+        Otherwise returns {"players", "changed", "starting_balance", "before", "after"} (before/after: credits held)."""
+        start = config.STARTING_BALANCE
+        async with self.lock:
+            busy = await self.in_play(guild_id)
+            if busy:
+                return {"in_play": busy}
+            cur = await self.conn.execute("SELECT user_id, balance FROM users WHERE guild_id=?", (guild_id,))
+            rows = await cur.fetchall()
+            changed = [r for r in rows if r["balance"] != start]
+            now = time.time()
+            try:
+                await self.conn.execute("UPDATE users SET balance=? WHERE guild_id=? AND balance!=?",
+                                        (start, guild_id, start))
+                await self.conn.executemany(
+                    """INSERT INTO money_log (guild_id, user_id, kind, amount, ts, other_id)
+                       VALUES (?, ?, 'admin', ?, ?, NULL)""",
+                    [(guild_id, r["user_id"], start - r["balance"], now) for r in changed])
+                await self.conn.executemany(
+                    """INSERT INTO admin_log (guild_id, user_id, action, amount, before, after, note, ts)
+                       VALUES (?, ?, 'set', ?, ?, ?, ?, ?)""",
+                    [(guild_id, r["user_id"], start, r["balance"], start, note, now) for r in changed])
+                await self.conn.commit()
+            except Exception:
+                await self.conn.rollback()
+                raise
+            return {"players": len(rows), "changed": len(changed), "starting_balance": start,
+                    "before": sum(r["balance"] for r in rows), "after": start * len(rows)}
+
     async def try_debit(self, guild_id: int, user_id: int, amount: int) -> bool:
         """Atomically removes `amount` if the user can afford it."""
         _check_amount(amount)

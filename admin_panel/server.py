@@ -30,6 +30,9 @@ Routes
   GET  /api/activity?guild=&before=&after=   games and other credit movements, newest first
   GET  /api/settings?guild=          the server's game switches (GAME_SETTINGS), e.g. {"bj_double_side": false}
   POST /api/settings                 {guild, key, value}: changes one of them; the games pick it up straight away
+  GET  /api/economy/reset?guild=     what an economy reset would do: players, starting balance, credits held, in play
+  POST /api/economy/reset            {guild, confirm: "RESET <guild id>"}: every player to the starting balance, in
+                                     one transaction, logged as admin edits; refused (409) while credits are in play
   everything else                    the page (admin_panel/static)
 """
 from __future__ import annotations
@@ -456,6 +459,43 @@ class AdminPanel:
                  f" ({note})" if note else "")
         return web.json_response({"before": before, "after": after})
 
+    @staticmethod
+    def reset_phrase(gid: int) -> str:
+        """What POST /api/economy/reset must carry as `confirm`, so a stray request can't wipe a server."""
+        return f"RESET {gid}"
+
+    def in_play_list(self, gid: int, rows) -> list[dict]:
+        return [{"user_id": str(r["user_id"]), "amount": r["amount"], **self.who(gid, r["user_id"])} for r in rows]
+
+    async def reset_preview(self, request: web.Request) -> web.Response:
+        """What an economy reset of this server would do, for the panel's three confirmations."""
+        gid = self.guild_arg(request)
+        stats = await queries.reset_preview(self.db, gid)
+        return web.json_response({**stats, "confirm": self.reset_phrase(gid),
+                                  "in_play": self.in_play_list(gid, await self.db.in_play(gid))})
+
+    async def reset_economy(self, request: web.Request) -> web.Response:
+        """Sets every player in the server to the starting balance. {guild, confirm: "RESET <guild id>"}. Refused
+        (409) while anyone has credits in play."""
+        try:
+            body = await request.json()
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            raise web.HTTPBadRequest(text="bad JSON")
+        gid = str(body.get("guild", "")) if isinstance(body, dict) else ""
+        if not gid.isdigit():
+            raise web.HTTPBadRequest(text="guild is missing")
+        gid = int(gid)
+        if body.get("confirm") != self.reset_phrase(gid):
+            raise web.HTTPBadRequest(text="the reset wasn't confirmed")
+        result = await self.db.reset_economy(gid)
+        if "in_play" in result:
+            return web.json_response({"error": "Someone has credits in play. Wait until their games end.",
+                                      "in_play": self.in_play_list(gid, result["in_play"])}, status=409)
+        log.warning("Admin panel: economy reset in %s: %s players (%s changed) set to %s, credits held %s -> %s",
+                    gid, result["players"], result["changed"], result["starting_balance"], result["before"],
+                    result["after"])
+        return web.json_response(result)
+
     async def edits(self, request: web.Request) -> web.Response:
         gid = self.guild_arg(request)
         rows = await queries.edits(self.db, gid, min(int(request.query.get("limit", "50") or 50), 500))
@@ -559,6 +599,8 @@ class AdminPanel:
         r.add_get("/api/activity", self.activity)
         r.add_get("/api/settings", self.settings)
         r.add_post("/api/settings", self.change_setting)
+        r.add_get("/api/economy/reset", self.reset_preview)
+        r.add_post("/api/economy/reset", self.reset_economy)
         r.add_route("*", "/api/{tail:.*}", self._api_404)
         r.add_get("/{tail:.*}", self.page)
         return app

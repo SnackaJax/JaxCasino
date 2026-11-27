@@ -10,6 +10,7 @@ from utils.checks import gambling_only
 from utils.economy import Wager, fmt, send_error, take_bet
 from utils.rng import rng
 from utils.views import BaseView
+from utils.bignum import credits_text
 
 log = logging.getLogger("jaxcasino.duel")
 
@@ -31,7 +32,7 @@ class Duel:
         self.finished = False
 
     def __str__(self) -> str:
-        return f"{self.game} duel {self.challenger} vs {self.opponent} for {self.stake:,}"
+        return f"{self.game} duel {self.challenger} vs {self.opponent} for {credits_text(self.stake)}"
 
     @property
     def title(self) -> str:

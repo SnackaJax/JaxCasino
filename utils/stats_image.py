@@ -13,6 +13,7 @@ from PIL import Image, ImageDraw
 
 from utils.table_image import K, box, fit, font, s, text, text_width
 from utils import bignum
+from utils.bignum import credits_text
 
 W, H = 1000, 1036
 UPPER_BOTTOM = 674             # bottom of the per-game / per-day / per-hour panels
@@ -49,7 +50,7 @@ def short(n: float) -> str:
         if abs(n) >= div:
             v = n / div
             return (f"{v:.1f}".removesuffix(".0") if abs(v) < 100 else f"{v:.0f}") + suffix
-    return f"{n:,}"
+    return f"{credits_text(n)}"
 
 
 def nice_step(raw: float) -> float:
@@ -128,7 +129,7 @@ def draw_games(d, x0, y0, x1, y1, rows) -> None:
         length = max(2, bmax * wagered / biggest) if wagered else 0
         bar_h(d, bx, cy - thick / 2, length, thick, SERIES)
         text(d, bx + length + 8, cy, short(wagered), f_val, INK, anchor="lm")
-        text(d, x1 - 18, cy, f"{plays:,}", font("regular", 13), INK_3, anchor="rm")
+        text(d, x1 - 18, cy, f"{credits_text(plays)}", font("regular", 13), INK_3, anchor="rm")
 
 
 def draw_daily(d, x0, y0, x1, y1, days) -> None:

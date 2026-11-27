@@ -23,6 +23,7 @@ from utils.checks import gambling_only
 from utils.economy import buy_limit_note, fmt, result_color, result_line, send_error, take_bet, tag
 from utils.rng import rng
 from utils.views import BaseView
+from utils.bignum import credits_text
 
 log = logging.getLogger("jaxcasino.bangerbash")
 
@@ -79,8 +80,8 @@ def spin_message(stake: int, spin: E.Spin) -> str:
     total = cr(stake, spin.x)
     if len(spin.wins) == 1:
         w = spin.wins[0]
-        return f"Line {w.line + 1} · {w.count}× {E.SYMBOLS[w.symbol][0]} · {total:,}"
-    return f"{len(spin.wins)} winning lines · {total:,}"
+        return f"Line {w.line + 1} · {w.count}× {E.SYMBOLS[w.symbol][0]} · {credits_text(total)}"
+    return f"{len(spin.wins)} winning lines · {credits_text(total)}"
 
 
 def paytable_embed() -> discord.Embed:
@@ -97,7 +98,7 @@ def paytable_embed() -> discord.Embed:
         f"**Turn up the heat** — before playing, gamble up to {E.MAX_GAMBLES} times: win and the feature climbs a "
         "rung, lose and it drops one (from Hot Potato, the bonus burns). The odds are set so a gamble is "
         "worth exactly what you risk.\n\n"
-        f"Maximum win {E.MAX_WIN:,}x per spin. Returns {rtp() * 100:g}% of bets on average."
+        f"Maximum win {credits_text(E.MAX_WIN)}x per spin. Returns {rtp() * 100:g}% of bets on average."
         + ("\n\n**Bonus buys** — one spin that is sure to land the grills, straight into the Grill Bonus: "
            + "; ".join(f"**{b['name']}** ({b['grills']} grills) {E.PRICES[k]:g}x your bet, pays back "
                        f"{E.buy_rtp(k, rtp()) * 100:.1f}%" for k, b in E.BUYS.items())
@@ -207,7 +208,7 @@ class Game:
         lines += win_lines(self.stake, spin, limit=4 if free else 6)
         message = spin_message(self.stake, spin)
         if spin.mult > 1 and spin.wins:
-            message = f"Win ×{spin.mult} · {spin_won:,}"
+            message = f"Win ×{spin.mult} · {credits_text(spin_won)}"
         await self.frame("\n".join(lines), grid=spin.grid, lines=[w.line for w in spin.wins], win_cells=cells,
                          lit=lit, mega=mega, links=spin.links, grill_cells=grills, win=won_before + spin_won,
                          message=message, **kw)
@@ -287,7 +288,7 @@ class Game:
             png = await asyncio.to_thread(I.render_potato, st, self.stake, rtp(), reveal, pick)
             v = reveal[pick]
             text = (f"🔥 **BURNT!** Hot Potato ends with {fmt(cr(self.stake, f.total))}." if v is None
-                    else f"🌭 **+{cr(self.stake, v):,}!** Total {fmt(cr(self.stake, f.total))}")
+                    else f"🌭 **+{credits_text(cr(self.stake, v))}!** Total {fmt(cr(self.stake, f.total))}")
             await self.show(png, text, None)
             await asyncio.sleep(1.8)
             if f.done:
@@ -320,7 +321,7 @@ class Game:
         v = f.cells[last] if last is not None else None
         head = ("🧺 **Picnic Pick** — open hampers until the ants show up!" if last is None
                 else "✖️ **DOUBLER!** Your total will be doubled!" if v == "double"
-                else f"🧺 **+{cr(self.stake, v):,}!**")
+                else f"🧺 **+{credits_text(cr(self.stake, v))}!**")
         self.view = PicnicView(self)
         await self.show(png, f"{head}\nTotal so far: {fmt(cr(self.stake, f.total))}", self.view)
 
@@ -386,7 +387,7 @@ class Game:
             if rnd.bonus.feature is not None:
                 lines.append(f"♨️ Grill Bonus won {fmt(cr(self.stake, rnd.bonus.total))}")
         if payout >= self.stake * E.MAX_WIN:
-            lines.append(f"🏆 **Maximum win reached: {E.MAX_WIN:,}x!**")
+            lines.append(f"🏆 **Maximum win reached: {credits_text(E.MAX_WIN)}x!**")
         mult = payout / self.stake if self.stake else 0
         if mult >= 50:
             lines.insert(0, "🎆 **EPIC WIN!**")
@@ -414,9 +415,9 @@ class Game:
         finally:
             self.cog.release(self)
         log.info("bangerbash: user %s %s bet %s (paid %s), feature %s, bonus %s, won %s", self.user.id, self.mode,
-                 f"{self.stake:,}", f"{self.paid:,}", rnd.spin.feature or "-",
+                 f"{credits_text(self.stake)}", f"{credits_text(self.paid)}", rnd.spin.feature or "-",
                  (E.TIERS[rnd.bonus.tier] + (" (burnt)" if rnd.bonus.lost else "")) if rnd.bonus else "-",
-                 f"{payout:,}")
+                 f"{credits_text(payout)}")
 
     async def timed_out(self) -> None:
         """Nobody chose in time: finish with default choices on the message itself."""
@@ -612,7 +613,7 @@ class BangerBash(commands.Cog):
                     try:
                         await game.wager.refund()
                         log.warning("bangerbash: round of user %s failed before it was shown; refunded %s",
-                                    game.user.id, f"{game.paid:,}")
+                                    game.user.id, f"{credits_text(game.paid)}")
                     except Exception:
                         log.exception("bangerbash: couldn't refund the bet of user %s", game.user.id)
             raise

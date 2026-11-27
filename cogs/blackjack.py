@@ -16,7 +16,7 @@ from utils.checks import gambling_only
 from utils.economy import fmt, result_color, result_line, take_bet, Wager, tag
 from utils.rng import rng
 from utils.views import OwnedView
-from utils.bignum import mul_floor
+from utils.bignum import credits_text, mul_floor
 
 MAX_HANDS = 4
 DECKS = 6
@@ -151,7 +151,7 @@ class BlackjackView(OwnedView):
             marker = "▶️ " if (not self.finished and i == self.current and len(self.hands) > 1) else ""
             name = f"Hand {i + 1}" if len(self.hands) > 1 else "Your hand"
             extra = f" — {h.result}" if h.result else ""
-            lines.append(f"{marker}**{name}** ({h.stake:,}{' doubled' if h.doubled else ''}): "
+            lines.append(f"{marker}**{name}** ({credits_text(h.stake)}{' doubled' if h.doubled else ''}): "
                          f"{show(h.cards)} — **{h.label()}**{extra}")
         embed = discord.Embed(title="🃏 Blackjack", color=discord.Color.dark_teal())
         # The player's profile picture as a small icon on the author line, so everyone can tell whose game
@@ -295,7 +295,7 @@ class AgainView(OwnedView):
         self.bet = bet
         self.used = False
         self.lock = asyncio.Lock()
-        self.again.label = f"Deal again ({bet:,})"
+        self.again.label = f"Deal again ({credits_text(bet)})"
 
     @discord.ui.button(label="Deal again", style=discord.ButtonStyle.success, emoji="🔁")
     async def again(self, interaction: discord.Interaction, button: discord.ui.Button):

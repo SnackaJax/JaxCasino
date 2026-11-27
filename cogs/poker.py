@@ -18,7 +18,7 @@ from utils.views import BaseModal, BaseView
 from utils.hand_eval import best_hand, hand_name
 from utils.rng import rng
 from utils.table_image import SeatInfo, TableInfo, render_hand, render_table
-from utils.bignum import mul_floor
+from utils.bignum import credits_text, mul_floor
 
 log = logging.getLogger("jaxcasino.poker")
 
@@ -176,7 +176,7 @@ class PokerTable:
             return "You'll be cashed out when this hand ends."
         stack = seat.stack
         await self.cash_out(seat)
-        self.note(f"🚪 {seat.name} left with {stack:,}")
+        self.note(f"🚪 {seat.name} left with {credits_text(stack)}")
         if not self.seats:
             await self.close("Everyone left the table.")
         else:
@@ -243,8 +243,8 @@ class PokerTable:
             bb_i = (sb_i + 1) % n
         sb_paid = self.seats[sb_i].put(self.sb)
         bb_paid = self.seats[bb_i].put(self.bb)
-        self.note(f"{self.seats[sb_i].name} posts small blind {sb_paid:,}")
-        self.note(f"{self.seats[bb_i].name} posts big blind {bb_paid:,}")
+        self.note(f"{self.seats[sb_i].name} posts small blind {credits_text(sb_paid)}")
+        self.note(f"{self.seats[bb_i].name} posts big blind {credits_text(bb_paid)}")
         self.current_bet = self.bb
         self.min_raise = self.bb
         self.turn = bb_i
@@ -261,13 +261,13 @@ class PokerTable:
                 self.note(f"✔️ {seat.name} checks")
             else:
                 paid = seat.put(to_call)
-                self.note(f"📞 {seat.name} calls {paid:,}" + (" (all-in)" if seat.all_in else ""))
+                self.note(f"📞 {seat.name} calls {credits_text(paid)}" + (" (all-in)" if seat.all_in else ""))
         elif action == "allin":
             target = seat.bet + seat.stack
             if target > self.current_bet:
                 return self._raise(seat, target)
             paid = seat.put(seat.stack)
-            self.note(f"📞 {seat.name} calls {paid:,} (all-in)")
+            self.note(f"📞 {seat.name} calls {credits_text(paid)} (all-in)")
         elif action == "raise":
             return self._raise(seat, raise_to)
         seat.acted = True
@@ -277,11 +277,11 @@ class PokerTable:
         max_to = seat.bet + seat.stack
         min_to = self.current_bet + self.min_raise
         if target <= self.current_bet:
-            return f"You must raise to more than {self.current_bet:,}."
+            return f"You must raise to more than {credits_text(self.current_bet)}."
         if target > max_to:
-            return f"You only have {max_to:,} available."
+            return f"You only have {credits_text(max_to)} available."
         if target < min_to and target != max_to:
-            return f"The minimum raise is to {min_to:,}."
+            return f"The minimum raise is to {credits_text(min_to)}."
         verb = "bets" if self.current_bet == 0 else "raises to"
         seat.put(target - seat.bet)
         if target - self.current_bet >= self.min_raise:
@@ -291,7 +291,7 @@ class PokerTable:
             if s is not seat and self.can_act(s):
                 s.acted = False
         seat.acted = True
-        self.note(f"⬆️ {seat.name} {verb} {target:,}" + (" (all-in)" if seat.all_in else ""))
+        self.note(f"⬆️ {seat.name} {verb} {credits_text(target)}" + (" (all-in)" if seat.all_in else ""))
         return None
 
     async def advance(self) -> None:
@@ -387,29 +387,29 @@ class PokerTable:
             winners[0].stack += rem
             pot_name = "Pot" if len(pots) == 1 else ("Main pot" if i == 0 else f"Side pot {i}")
             if len(eligible) == 1:
-                results.append(f"↩️ {winners[0].name} gets back {amount:,} (uncalled)")
+                results.append(f"↩️ {winners[0].name} gets back {credits_text(amount)} (uncalled)")
             else:
                 names = ", ".join(w.name for w in winners)
                 verb = "split" if len(winners) > 1 else "wins"
-                results.append(f"🏆 **{names}** {verb} {pot_name.lower()} of {amount:,} with **{hand_name(best)}**"
-                               + (f" (rake {rake:,})" if rake else ""))
+                results.append(f"🏆 **{names}** {verb} {pot_name.lower()} of {credits_text(amount)} with **{hand_name(best)}**"
+                               + (f" (rake {credits_text(rake)})" if rake else ""))
                 for w in winners:
                     self.won[w.user.id] = self.won.get(w.user.id, 0) + share + (rem if w is winners[0] else 0)
         self.last_result = "\n".join(results) + "\n\n" + "\n".join(lines)
         names = {s.user.id: s.name for s in self.seats}
         if len(self.won) == 1:
             uid, amt = next(iter(self.won.items()))
-            self.result_short = f"{names[uid]} wins {amt:,} with {self.reveal[uid]}"
+            self.result_short = f"{names[uid]} wins {credits_text(amt)} with {self.reveal[uid]}"
         else:
-            self.result_short = ", ".join(f"{names[uid]} wins {amt:,}" for uid, amt in self.won.items())
+            self.result_short = ", ".join(f"{names[uid]} wins {credits_text(amt)}" for uid, amt in self.won.items())
         await self.end_hand()
 
     async def win_uncontested(self, winner: Seat) -> None:
         amount = self.pot
         winner.stack += amount
         self.won = {winner.user.id: amount}
-        self.result_short = f"{winner.name} wins {amount:,} — everyone else folded"
-        self.last_result = f"🏆 **{winner.name}** wins {amount:,} — everyone else folded."
+        self.result_short = f"{winner.name} wins {credits_text(amount)} — everyone else folded"
+        self.last_result = f"🏆 **{winner.name}** wins {credits_text(amount)} — everyone else folded."
         await self.end_hand()
 
     async def end_hand(self) -> None:
@@ -461,7 +461,7 @@ class PokerTable:
         await self.clear_ping()
         seat = self.seats[self.turn]
         to_call = self.current_bet - seat.bet
-        what = f"{min(to_call, seat.stack):,} to call" if to_call > 0 else "you can check"
+        what = f"{credits_text(min(to_call, seat.stack))} to call" if to_call > 0 else "you can check"
         try:
             self.ping = await self.channel.send(
                 f"🃏 {seat.user.mention}, it's your turn ({what}). <t:{int(self.deadline)}:R>",
@@ -503,7 +503,7 @@ class PokerTable:
         if self.phase == "playing" and self.turn >= 0:
             s = self.seats[self.turn]
             to_call = self.current_bet - s.bet
-            todo = f"{min(to_call, s.stack):,} to call" if to_call > 0 else "can check or bet"
+            todo = f"{credits_text(min(to_call, s.stack))} to call" if to_call > 0 else "can check or bet"
             embed.description = f"▶️ **{s.name}** to act — {todo} · <t:{int(self.deadline)}:R>"
         elif self.phase == "playing":
             embed.description = "Dealing the rest of the board…"
@@ -519,7 +519,7 @@ class PokerTable:
             embed.add_field(name="Last actions", value="\n".join(self.actions[-4:]), inline=False)
         if self.last_result and self.phase in ("between", "waiting"):
             embed.add_field(name=f"Hand #{self.hand_no} result", value=self.last_result[:1024], inline=False)
-        footer = (f"Buy-in {self.buy_in:,} · {len(self.seats)}/{self.max_players} seats · "
+        footer = (f"Buy-in {credits_text(self.buy_in)} · {len(self.seats)}/{self.max_players} seats · "
                   f"{TURN_TIME}s per turn · 🃏 My cards shows your hand")
         if config.POKER_RAKE:
             footer += f" · {config.POKER_RAKE * 100:g}% rake"
@@ -607,7 +607,7 @@ class RaiseModal(BaseModal):
         min_to = min(table.current_bet + table.min_raise, max_to)
         self.amount = discord.ui.TextInput(
             label="Raise to (your total bet this round)",
-            placeholder=f"Min {min_to:,} · Max {max_to:,} · or 'all'",
+            placeholder=f"Min {credits_text(min_to)} · Max {credits_text(max_to)} · or 'all'",
             max_length=20,
         )
         self.add_item(self.amount)
@@ -643,15 +643,15 @@ class PokerView(BaseView):
         if my_turn:
             s = t.seats[t.turn]
             to_call = t.current_bet - s.bet
-            self.call_btn.label = "Check" if to_call <= 0 else f"Call {min(to_call, s.stack):,}"
+            self.call_btn.label = "Check" if to_call <= 0 else f"Call {credits_text(min(to_call, s.stack))}"
             self.raise_btn.label = "Raise" if t.current_bet else "Bet"
             self.raise_btn.disabled = s.stack <= to_call
-            self.allin_btn.label = f"All-in ({s.stack:,})"
+            self.allin_btn.label = f"All-in ({credits_text(s.stack)})"
         else:
             self.call_btn.label = "Check / Call"
             self.raise_btn.label = "Raise"
             self.allin_btn.label = "All-in"
-        self.join_btn.label = f"Join ({t.buy_in:,})"
+        self.join_btn.label = f"Join ({credits_text(t.buy_in)})"
         self.join_btn.disabled = len(t.seats) >= t.max_players
         self.start_btn.disabled = t.phase != "waiting" or len(t.seats) < 2
 

@@ -21,6 +21,7 @@ from utils.economy import fmt, send_error
 from utils.rng import rng
 from utils.shop import (ITEMS, PRICE_LABELS, TIMEOUT_DURATIONS, VOICE_DURATIONS, duration_label, get_prices,
                         item_price_text)
+from utils.bignum import credits_text
 
 log = logging.getLogger("jaxcasino.shop")
 
@@ -207,7 +208,7 @@ class Shop(commands.Cog):
     async def _announce(self, interaction: discord.Interaction, text: str, cost: int) -> None:
         bal = await self.bot.db.get_balance(interaction.guild_id, interaction.user.id)
         embed = discord.Embed(description=text, color=discord.Color.orange())
-        embed.set_footer(text=f"🛒 Bought for {cost:,} credits · /shop")
+        embed.set_footer(text=f"🛒 Bought for {credits_text(cost)} credits · /shop")
         await interaction.response.send_message(embed=embed)
         log.info("Shop: %s spent %s (balance %s): %s", interaction.user, f"{cost:,}", f"{bal:,}", text)
 
@@ -241,7 +242,7 @@ class Shop(commands.Cog):
         for item in ITEMS.values():
             embed.add_field(name=f"{item.emoji} {item.name} · {item.how}",
                             value=f"{item_price_text(item, prices)}\n{item.description}", inline=False)
-        embed.set_footer(text=f"Your balance: {bal:,} credits")
+        embed.set_footer(text=f"Your balance: {credits_text(bal)} credits")
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     # ---------------------------------------------------------------- buy

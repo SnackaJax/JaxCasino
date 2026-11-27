@@ -46,7 +46,7 @@ from __future__ import annotations
 
 import math
 import sys
-from utils.bignum import mul_floor, mul_round
+from utils.bignum import credits_text, mul_floor, mul_round
 
 VW = VH = 8                     # the whole vault
 N = VW * VH
@@ -723,7 +723,7 @@ def _simulate(n: int, modes: list[str]) -> None:
         mean, ci = _summary(mode, t)
         res[mode] = (t, mean, ci)
         nn = t["n"]
-        print(f"[{mode}] {int(nn):,} rounds in {time.time() - t0:.0f}s: raw mean {mean:.4f} ± {ci:.4f} (95%)"
+        print(f"[{mode}] {credits_text(int(nn))} rounds in {time.time() - t0:.0f}s: raw mean {mean:.4f} ± {ci:.4f} (95%)"
               f"{' (bonus not included)' if mode in ('spin', 'boost') else ''}")
         print(f"  wins on {t['hits'] / nn:.1%}, more than the price on {t['above'] / nn:.1%}, boss {t['boss'] / nn:.2%}, "
               f"vault grab {t['grab'] / nn:.2%}, team ups {t['teamup'] / nn:.3f}, scuffles {t['scuffle'] / nn:.3f}, "
@@ -746,7 +746,7 @@ def _simulate(n: int, modes: list[str]) -> None:
             bonus_part = sum(t[f"bp{k}"] / nn * res[m][1] for k, m in lengths.items())
             res[mode] = (t, mean + bonus_part, ci)
             print(f"[{mode}] bonuses: {int(t['bp3'])} with 3 Blueprints, {int(t['bp4'])} with 4, {int(t['bp5'])} with 5+ "
-                  f"in {int(nn):,} rounds")
+                  f"in {credits_text(int(nn))} rounds")
             print(f"[{mode}] with the bonus: {mean:.4f} + {bonus_part:.4f} = {mean + bonus_part:.4f}")
     shown = [m for m in res if not (m.startswith("night") and m != "night")]
     print("\nMEASURED = {" + ", ".join(f'"{m}": {res[m][1]:.4f}' for m in shown) + "}")

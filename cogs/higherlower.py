@@ -11,7 +11,7 @@ from utils.cards import Card, random_card
 from utils.checks import gambling_only
 from utils.economy import Wager, fmt, fmt_mult, result_color, result_line, take_bet, tag
 from utils.views import OwnedView
-from utils.bignum import mul_floor
+from utils.bignum import credits_text, mul_floor
 
 
 def chances(card: Card) -> tuple[float, float]:
@@ -46,7 +46,7 @@ class HigherLowerView(OwnedView):
         self.higher_btn.disabled = p_hi >= 1
         self.lower_btn.label = f"Lower or same ({fmt_mult(step_mult(p_lo))})"
         self.lower_btn.disabled = p_lo >= 1
-        self.cashout_btn.label = f"Cash out {mul_floor(self.wager.stake, self.mult):,}"
+        self.cashout_btn.label = f"Cash out {credits_text(mul_floor(self.wager.stake, self.mult))}"
         self.cashout_btn.disabled = self.correct == 0
 
     def embed(self) -> discord.Embed:

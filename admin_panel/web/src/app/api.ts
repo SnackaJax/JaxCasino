@@ -25,7 +25,8 @@ function revive(_key: string, value: unknown): unknown {
     const digits = value.slice(0, -1)
     const n = Number(digits)
     if (EXACT.size > 100_000) EXACT.clear()
-    EXACT.set(n, digits)
+    // past about 1.8e308 a JavaScript number is Infinity: those all look alike, so their digits can't be kept
+    if (Number.isFinite(n)) EXACT.set(n, digits)
     return n
   }
   return value

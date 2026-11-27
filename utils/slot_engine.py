@@ -10,6 +10,7 @@ sticky wilds. Pure game logic, no Discord code, so it can be simulated (`python 
 - A paid spin, together with any free spins it triggers, never wins more than MAX_WIN times the bet.
 """
 from dataclasses import dataclass, field
+from utils.bignum import credits_text
 
 REELS = 6
 ROWS = 4
@@ -263,7 +264,7 @@ def _simulate(n: int, mode: str) -> None:
     sd = math.sqrt(max(sum(p[2] for p in parts) / n - mean * mean, 0))
     ci = 1.96 * sd / math.sqrt(n)
     scale = 0.99 / MEASURED_RTP
-    print(f"[{mode}] {n:,} rounds in {time.time() - t0:.0f}s: raw {mean:.4f} ± {ci:.4f} (95%), "
+    print(f"[{mode}] {credits_text(n)} rounds in {time.time() - t0:.0f}s: raw {mean:.4f} ± {ci:.4f} (95%), "
           f"capped {sum(p[3] for p in parts)}")
     if mode != "spin":
         print(f"  price {BUY_PRICE:g}x: pays back {mean * scale / BUY_PRICE:.2%} ({(mean - ci) * scale / BUY_PRICE:.2%}-"

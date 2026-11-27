@@ -28,6 +28,14 @@ const DENOMS = [
   [2500000000, '#b0b8c4', '#1b2f73', '#1b2f73'], [5000000000, '#0096d6', '#fff', '#fff'],
   [10000000000, '#8fce3a', '#1d1d1d', '#1d1d1d'],
 ];
+{
+  // bigger tables (they grow with the players' balances, activity/blackjack.py): chips go on in steps of 2.5, 5 and 10
+  // (25B, 50B, 100B, ... up to 1e36), in the colours of the 100M-10B chips over again
+  const palette = DENOMS.slice(-8).map((d) => d.slice(1));
+  for (let e = 10, i = 0; e < 36; e++) {
+    for (const m of [2.5, 5, 10]) DENOMS.push([Number(`${m}e${e}`), ...palette[i++ % palette.length]]);
+  }
+}
 const RACK = ['#1d1d1d', '#7b3fb3', '#e5a50a', '#178a4c', '#c8302c', '#2b5fc0', '#0f9a9a', '#d9468f', '#1d1d1d'];
 
 {
@@ -45,8 +53,8 @@ const srv = () => Date.now() + offset;
 // an amount shortened to at most 4 digits: 2.5k, 250k, 2.5M, 9.08M, 487.5M, 12.5B (never "1000M")
 function shortNum(n) {
   if (num(n) < 1e3) return fmt(n);
+  if (huge(n)) return huge(n);   // the digits, not the number: past 1e308 that's Infinity
   n = num(n);
-  if (huge(n)) return huge(n);
   for (const [d, u] of [...BIG_UNITS, [1e12, 'T'], [1e9, 'B'], [1e6, 'M'], [1e3, 'k']]) {
     const x = n / d, t = +x.toFixed(x < 10 ? 2 : 1);
     if (t >= 1) return `${t}${u}`;
@@ -94,7 +102,10 @@ function onMessage(m) {
       if (m.server_voice) useServerVoice(session);
       updateVoiceBtn();
       break;
-    case 'me': balance = m.balance; showBalance(); renderForm(); renderRoom(); if (T) renderControls(T); break;
+    case 'me':
+      balance = m.balance;
+      if (W && m.min_bets) { W.min_bets = m.min_bets; W.next_unlock = m.next_unlock; }
+      showBalance(); renderForm(); renderRoom(); if (T) renderControls(T); break;
     case 'room': {
       const was = !!room.double_side;
       room = m; renderRoom();
@@ -123,7 +134,7 @@ function onMessage(m) {
 let shownBalance = null;
 function showBalance() {
   const el = $('balance');
-  el.textContent = innerWidth < 520 && balance >= 1e6 ? shortNum(balance) : fmt(balance);
+  el.textContent = (innerWidth < 520 && balance >= 1e6) || num(balance) >= 1e30 ? shortNum(balance) : fmt(balance);
   el.parentElement.title = `${fmt(balance)} credits`;
   if (shownBalance !== null && num(balance) > num(shownBalance)) {
     el.parentElement.animate([{ scale: 1 }, { scale: 1.15, offset: 0.4 }, { scale: 1 }], { duration: 500, easing: 'ease' });
@@ -246,16 +257,23 @@ function chipPile(amount, max = 5) {
 }
 
 // ------------------------------------------------------------------ the room
-function setupForm() {
+// The minimum bets this player can open a table with. Past the standard ones they grow with the balance: the server
+// sends the list again (and the next one to unlock) with every balance change.
+function tiers() {
   const ok = W.min_bets && W.min_bets.length ? [...W.min_bets]
     : MIN_BETS.filter((v) => v >= W.min_bet && (!W.max_bet || v <= W.max_bet));
   if (!ok.length) ok.push(W.min_bet);
-  if (!ok.includes(minBet)) minBet = ok[0];
+  return ok;
+}
+function setupForm() {
+  const ok0 = tiers();
+  if (!ok0.includes(minBet)) minBet = ok0[0];
   $('seatPick').innerHTML = Array.from({ length: W.max_seats }, (_, k) => `<button data-n="${k + 1}">${k + 1}</button>`).join('');
   $('seatPick').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
     seatsWanted = Number(b.dataset.n); sfx.click(); renderForm();
   }));
   const step = (d) => {
+    const ok = tiers();
     const i = clamp(ok.indexOf(minBet) + d, 0, ok.length - 1);
     minBet = ok[i]; sfx.click(); renderForm();
   };
@@ -273,8 +291,15 @@ function tableMax(min) {
 }
 function renderForm() {
   if (!W) return;
-  $('minBet').textContent = fmt(minBet);
-  $('limitsHint').textContent = `Bets ${money(minBet)} – ${money(tableMax(minBet))}` + (minBet > balance ? ' · more than your balance' : '');
+  const ok = tiers();
+  // a balance that dropped can take the picked table away: fall back to the biggest one still open to them
+  if (!ok.includes(minBet)) minBet = ok.filter((v) => v <= minBet).pop() ?? ok[0];
+  $('minBet').textContent = minBet >= 1e15 ? shortNum(minBet) : fmt(minBet);
+  $('minBet').title = `${fmt(minBet)} credits`;
+  const next = W.next_unlock;
+  const atTop = minBet === ok[ok.length - 1];
+  $('limitsHint').textContent = `Bets ${money(minBet)} – ${money(tableMax(minBet))}` + (minBet > balance ? ' · more than your balance' : '')
+    + (atTop && next ? ` · ${money(next.min_bet)} tables open at a ${money(next.at)} balance` : '');
   $('seatPick').querySelectorAll('button').forEach((b) => b.classList.toggle('on', Number(b.dataset.n) === seatsWanted));
 }
 // The tables in the room list, kept by id: the list is updated in place (the room list comes again on every bet and

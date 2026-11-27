@@ -9,7 +9,7 @@ from discord.ext import commands
 import config
 from cogs.serverstats import MIN_PLAYS_FOR_ODDS, ODDS_GAMES, game_name
 from utils.checks import admin_only, gambling_channels
-from utils.bignum import parse_short
+from utils.bignum import credits_text, parse_short
 from utils.economy import fmt, send_error
 from utils.shop import ITEMS, PRICE_LABELS, get_prices, item_price_text, price_text
 from utils.views import ConfirmView
@@ -108,7 +108,7 @@ class Admin(commands.Cog):
         view = ConfirmView(interaction.user.id)
         await interaction.response.send_message(
             embed=admin_embed(
-                f"⚠️ Are you sure you want to **{verb} {fmt(amount)} {prep} all {len(members):,} members**?"
+                f"⚠️ Are you sure you want to **{verb} {fmt(amount)} {prep} all {credits_text(len(members))} members**?"
                 + ("" if give else "\nBalances will not go below 0."),
                 discord.Color.orange(),
             ),

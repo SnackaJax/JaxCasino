@@ -11,6 +11,7 @@ from functools import lru_cache
 
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 from utils import bignum
+from utils.bignum import credits_text
 
 K = 2                       # supersampling factor
 W, H = 1000, 640            # output size
@@ -86,8 +87,8 @@ def short_amount(n: int) -> str:
             x = n / d
             t = round(x, 2 if x < 10 else 1)
             if t >= 1:
-                return f"{t:g}{u}" if t < 1e5 else f"{round(t):,}{u}"
-    return f"{n:,}"
+                return f"{t:g}{u}" if t < 1e5 else f"{credits_text(round(t))}{u}"
+    return f"{credits_text(n)}"
 
 
 @lru_cache(maxsize=64)
@@ -131,7 +132,7 @@ def short(n: int) -> str:
         return f"{n / 1e9:.1f}B"
     if n >= 10_000_000:
         return f"{n / 1e6:.1f}M"
-    return f"{n:,}"
+    return f"{credits_text(n)}"
 
 
 def pill(d: ImageDraw.ImageDraw, x, y, value: str, f, fg, bg, pad=12, h=28, outline=None) -> None:

@@ -13,6 +13,7 @@ from PIL import Image, ImageDraw
 from utils.stats_image import (BRAND, GRID, INK, INK_2, INK_3, PAD, PANEL, SERIES, SURFACE, W, draw_kpis, empty,
                                nice_step, panel, short)
 from utils.table_image import K, box, fit, font, s, text, text_width
+from utils.bignum import credits_text
 
 H = 800
 UP = (88, 196, 122)
@@ -165,7 +166,7 @@ def _signed_bars(d, x0, y0, x1, y1, rows) -> None:
             d.rounded_rectangle(box(zero - length, cy - thick / 2, zero, cy + thick / 2), radius=s(3), fill=color)
             text(d, zero - length - 6, cy, signed(v), f_val, INK, anchor="rm")
         if count is not None:
-            text(d, x1 - 18, cy, f"{count:,}", font("regular", 12), INK_3, anchor="rm")
+            text(d, x1 - 18, cy, f"{credits_text(count)}", font("regular", 12), INK_3, anchor="rm")
 
 
 def render_balance(info: BalanceInfo) -> bytes:

@@ -6,13 +6,14 @@ from discord.ext import commands
 import config
 from utils.economy import BetError, fmt, parse_amount, send_error
 from utils.restart import send_panel
+from utils.bignum import credits_text
 
 HELP_TEXT = {
     "💰 Economy": (
         "`/balance` · `/claim` · `/pay` · `/leaderboard` · `/stats` · `/serverstats`\n"
         "`/shop` · `/buy` — spend credits on a chicken, voice disconnects, mutes, deafens, timeouts, nicknames "
         "or a secret random kick\n"
-        f"Broke? Press the restart button for {config.RESTART_AMOUNT:,} credits (or use `/restart`)."
+        f"Broke? Press the restart button for {credits_text(config.RESTART_AMOUNT)} credits (or use `/restart`)."
     ),
     "⚡ Instant games": (
         "`/coinflip` — heads or tails\n"
@@ -55,7 +56,7 @@ class Economy(commands.Cog):
         embed = discord.Embed(description=f"{user.mention} has {fmt(bal)}", color=discord.Color.gold())
         await interaction.response.send_message(embed=embed)
 
-    @app_commands.command(name="claim", description=f"Claim your {config.DAILY_AMOUNT:,} credits (once every 24 hours).")
+    @app_commands.command(name="claim", description=f"Claim your {credits_text(config.DAILY_AMOUNT)} credits (once every 24 hours).")
     async def claim(self, interaction: discord.Interaction):
         ok, next_at, bal = await self.bot.db.claim_daily(interaction.guild_id, interaction.user.id)
         if not ok:
@@ -69,7 +70,7 @@ class Economy(commands.Cog):
         await interaction.response.send_message(embed=embed)
 
     @app_commands.command(name="restart",
-                          description=f"Broke? Press a button to get {config.RESTART_AMOUNT:,} credits.")
+                          description=f"Broke? Press a button to get {credits_text(config.RESTART_AMOUNT)} credits.")
     async def restart(self, interaction: discord.Interaction):
         await send_panel(interaction)
 

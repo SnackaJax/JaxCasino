@@ -42,6 +42,9 @@ RESTART_AMOUNT = _int("RESTART_AMOUNT", 500)
 RESTART_PRESSES = max(1, _int("RESTART_PRESSES", 1))
 RESTART_PAY_BLOCK = max(0, _int("RESTART_PAY_BLOCK_SECONDS", 3600))  # in seconds
 MAX_BET = _int("MAX_BET", 0)  # 0 = unlimited
+# Live blackjack: tables above the standard minimum bets (beyond 500M: 1B, 2.5B, 5B, ... without end) can be opened by
+# a player whose balance is at least this many times the table's minimum bet.
+BLACKJACK_TABLE_UNLOCK = max(1, _int("BLACKJACK_TABLE_UNLOCK", 20))
 # The biggest bet a slot bonus buy can be played at (a buy costs its price times the bet), in the Activity and the
 # chat slots alike. Paid spins go up to MAX_BET. 0 = no limit.
 BUY_MAX_BET = max(0, _int("BUY_MAX_BET", 100_000_000))

@@ -10,7 +10,7 @@ import config
 from utils.checks import gambling_only
 from utils.economy import fmt, fmt_mult, result_color, result_line, send_error, take_bet, tag
 from utils.rng import rng
-from utils.bignum import mul_floor
+from utils.bignum import credits_text, mul_floor
 
 BET_DESC = "Any amount (e.g. 1234) or a shortcut: 2.5k, 1m, half, all"
 
@@ -81,7 +81,7 @@ class Instant(commands.Cog):
             description=f"The coin landed on **{result.title()}**!\n\n{result_line(wager.stake, payout, bal)}",
             color=result_color(wager.stake, payout),
         )
-        embed.set_footer(text=f"Bet {wager.stake:,} on {side.name} · pays {mult}x")
+        embed.set_footer(text=f"Bet {credits_text(wager.stake)} on {side.name} · pays {mult}x")
         await interaction.edit_original_response(embed=embed)
 
     # ---------------------------------------------------------------- dice

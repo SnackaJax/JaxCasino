@@ -52,6 +52,7 @@ from dataclasses import dataclass, field
 import aiohttp
 from aiohttp import web
 
+import config
 from cogs.blackjack import MAX_HANDS, card_value, draw_upcard, hand_value, is_blackjack
 from utils.cards import Card, new_deck
 from utils.economy import Wager
@@ -75,9 +76,14 @@ MAX_TABLES = 8                # per server
 MAX_SEATS = 7
 MAX_SEATS_EACH = MAX_SEATS    # seats one player can take at the same table (no limit: every free one)
 MAX_BET_MULT = 100            # a table's maximum bet is this many times its minimum
-# the minimum bets a table can have; the high-stakes ones at the end
+# the minimum bets anyone can open a table with; the high-stakes ones at the end
 MIN_BETS = (10, 25, 50, 100, 250, 500, 1_000, 2_500, 5_000, 10_000, 25_000, 50_000, 100_000, 250_000, 500_000,
             1_000_000, 100_000_000, 250_000_000, 500_000_000)
+# Above those the minimums go on in steps of 1, 2.5 and 5 (1B, 2.5B, 5B, 10B, ...) without end. A player can open
+# one of those when their balance is at least config.BLACKJACK_TABLE_UNLOCK (20) times its minimum, so the tables on
+# offer grow with them. Anyone who can afford a table's minimum can sit at it, whoever opened it.
+# Sent to the pages as strings past 2^53 (exact); other amounts stay numbers the page can add up (utils/bignum.py).
+EXACT_KEYS = frozenset({"balance"})
 MAX_MESSAGES_PER_SECOND = 12
 # pauses, so the page can animate each step
 DEAL_EACH = 0.28              # per card dealt
@@ -125,10 +131,39 @@ class Rejected(Exception):
     pass
 
 
-def min_bets(settings) -> list[int]:
-    """The minimum bets a table can be opened with on this bot (within the bot's own minimum and maximum bet)."""
-    return [v for v in MIN_BETS if v >= settings.min_bet and (not settings.max_bet or v <= settings.max_bet)] \
-        or [settings.min_bet]
+def next_tier(v: int) -> int:
+    """The minimum bet after v in steps of 1, 2.5 and 5: 500M -> 1B -> 2.5B -> 5B -> 10B."""
+    return v * 5 // 2 if str(v).rstrip("0") == "1" else v * 2
+
+
+def _allowed(settings, v: int) -> bool:
+    return v >= settings.min_bet and (not settings.max_bet or v <= settings.max_bet)
+
+
+def min_bets(settings, balance: int | None = None) -> list[int]:
+    """The minimum bets a table can be opened with on this bot (within the bot's own minimum and maximum bet): the
+    standard ones for everyone, then, with `balance`, every bigger step that balance unlocks."""
+    out = [v for v in MIN_BETS if _allowed(settings, v)]
+    if balance is not None:
+        v = MIN_BETS[-1]
+        while True:
+            v = next_tier(v)
+            if (settings.max_bet and v > settings.max_bet) or v * config.BLACKJACK_TABLE_UNLOCK > balance:
+                break
+            if _allowed(settings, v):
+                out.append(v)
+    return out or [settings.min_bet]
+
+
+def next_unlock(settings, balance: int) -> dict | None:
+    """The first minimum bet that balance doesn't unlock yet, and the balance that does: {min_bet, at}."""
+    v = MIN_BETS[-1]
+    while True:
+        v = next_tier(v)
+        if settings.max_bet and v > settings.max_bet:
+            return None
+        if v * config.BLACKJACK_TABLE_UNLOCK > balance:
+            return {"min_bet": v, "at": v * config.BLACKJACK_TABLE_UNLOCK}
 
 
 def perfect_pairs(a: Card, b: Card) -> str | None:
@@ -940,7 +975,7 @@ class Room:
             return
         data["now"] = now_ms()
         try:
-            await ws.send_str(bignum.compact_dumps(data))   # big credits as strings
+            await ws.send_str(bignum.compact_dumps(data, EXACT_KEYS))   # see EXACT_KEYS
         except (ConnectionResetError, RuntimeError, aiohttp.ClientError):
             pass
 
@@ -975,21 +1010,27 @@ class Room:
 
     async def push_me(self, user_id: int) -> None:
         if user_id in self.viewers:
-            await self.to_user(user_id, {"type": "me", "balance": await self.hub.server.db.get_balance(
-                self.guild_id, user_id)})
+            balance = await self.hub.server.db.get_balance(self.guild_id, user_id)
+            s = self.hub.server.settings
+            # the tables they can open grow (and shrink) with their balance
+            await self.to_user(user_id, {"type": "me", "balance": balance, "min_bets": min_bets(s, balance),
+                                         "next_unlock": next_unlock(s, balance)})
 
     async def handle(self, v: Viewer, msg: dict) -> None:
         kind = msg.get("type")
         if kind == "create":
-            min_bet, max_players = msg.get("min_bet"), msg.get("max_players", 5)
-            if not all(isinstance(x, int) and not isinstance(x, bool) for x in (min_bet, max_players)):
+            min_bet, max_players = bignum.json_int(msg.get("min_bet")), msg.get("max_players", 5)
+            if min_bet is None or not isinstance(max_players, int) or isinstance(max_players, bool):
                 raise Rejected("Invalid table settings.")
             s = self.hub.server.settings
             if min_bet < s.min_bet:
                 raise Rejected(f"The minimum bet must be at least {s.min_bet:,}.")
             if s.max_bet and min_bet > s.max_bet:
                 raise Rejected(f"The minimum bet can't be more than the bot's maximum bet ({s.max_bet:,}).")
-            if min_bet not in min_bets(s):
+            if min_bet not in min_bets(s, await self.hub.server.db.get_balance(self.guild_id, v.user_id)):
+                if min_bet > MIN_BETS[-1]:
+                    raise Rejected(f"A table with a {bignum.short(min_bet)} minimum opens once your balance is "
+                                   f"{bignum.short(min_bet * config.BLACKJACK_TABLE_UNLOCK)} or more.")
                 raise Rejected("Pick one of the minimum bets on the list.")
             if not 1 <= max_players <= MAX_SEATS:
                 raise Rejected(f"A table has 1 to {MAX_SEATS} seats.")
@@ -1041,8 +1082,8 @@ class Room:
                     text = await t.leave_seats(seats)
                     await self.to_user(v.user_id, {"type": "notice", "message": text})
                 elif kind == "bet":
-                    amount, spot = msg.get("amount"), msg.get("spot", "main")
-                    if not isinstance(amount, int) or isinstance(amount, bool) or amount <= 0:
+                    amount, spot = bignum.json_int(msg.get("amount")), msg.get("spot", "main")
+                    if amount is None or amount <= 0:
                         raise Rejected("Invalid amount.")
                     if spot not in ("main", *SIDE_BETS):
                         raise Rejected("Invalid bet.")

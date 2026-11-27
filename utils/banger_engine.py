@@ -29,7 +29,7 @@ from __future__ import annotations
 import math
 import sys
 from dataclasses import dataclass, field
-from utils.bignum import mul_ceil, mul_floor
+from utils.bignum import credits_text, mul_ceil, mul_floor
 
 REELS = 5
 ROWS = 3
@@ -670,13 +670,13 @@ def _simulate(n: int) -> None:
         above += x > 1
         capped += x >= MAX_WIN
         biggest = max(biggest, x)
-    print(f"{n:,} rounds in {time.time() - t0:.0f}s")
+    print(f"{credits_text(n)} rounds in {time.time() - t0:.0f}s")
     print(f"raw payback {total / n:.4f} (lines {base_x / n:.4f}, bonus {bonus_x / n:.4f})")
     print(f"wins on {hits / n:.1%} of spins, more than the bet on {above / n:.1%}")
     print(f"random feature every {n / max(feats, 1):.1f} spins, second helping every {n / max(respins, 1):.1f}")
     print(f"bonus every {n / max(bonuses, 1):.0f} spins, rungs {[round(t / max(bonuses, 1), 3) for t in tiers]}")
     for k, v in sorted(by_feature.items()):
-        print(f"  {FEATURE_NAMES[k]:15} avg {sum(v) / len(v):.2f}x over {len(v):,}")
+        print(f"  {FEATURE_NAMES[k]:15} avg {sum(v) / len(v):.2f}x over {credits_text(len(v))}")
     print(f"biggest {biggest:.0f}x, capped {capped}")
 
 
@@ -728,7 +728,7 @@ def _buys(n: int, rtp: float = 0.99) -> None:
         staked = sum(p[1] for p in parts)
         mean = sum(p[2] for p in parts) / staked
         sd = math.sqrt(max(sum(p[3] for p in parts) / rounds - mean * mean, 0))
-        print(f"{mode:7} {rounds:,} rounds at {PRICES[mode]:g}x: pays back {mean:.2%} ± {1.96 * sd / math.sqrt(rounds):.2%} "
+        print(f"{mode:7} {credits_text(rounds)} rounds at {PRICES[mode]:g}x: pays back {mean:.2%} ± {1.96 * sd / math.sqrt(rounds):.2%} "
               f"(expected {buy_rtp(mode, rtp):.2%})")
 
 

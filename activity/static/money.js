@@ -33,9 +33,25 @@ export function plus(a, b) {
 // Short forms past a trillion: quadrillion (Qa), quintillion (Qi), sextillion (Sx), septillion (Sp), octillion (Oc),
 // nonillion (No), decillion (Dc). Each page puts these in front of its own k/M/B/T list.
 export const BIG_UNITS = [[1e33, 'Dc'], [1e30, 'No'], [1e27, 'Oc'], [1e24, 'Sp'], [1e21, 'Sx'], [1e18, 'Qi'], [1e15, 'Qa']];
+/** 2.5k, 9.08M, 21.1Qi, 1.23e40: any amount in at most 3 digits and a unit (for the balance once it's 31 digits
+ * or more, where the full number no longer fits the header; the tooltip keeps it) */
+export function shortBig(v) {
+  if (huge(v)) return huge(v);   // the digits, not the number: past 1e308 that's Infinity
+  const n = num(v);
+  for (const [d, u] of [...BIG_UNITS, [1e12, 'T'], [1e9, 'B'], [1e6, 'M'], [1e3, 'k']]) {
+    if (n >= d) { const x = n / d; return `${+x.toFixed(x < 10 ? 2 : x < 100 ? 1 : 0)}${u}`; }
+  }
+  return fmt(v);
+}
 /** past 1e36 even the biggest unit runs out: 1.23e40 */
 export function huge(n) {
   if (!(num(n) >= 1e36)) return null;
-  const [m, e] = num(n).toExponential(2).split('e');
-  return `${+m}e${+e}`;
+  if (Number.isFinite(num(n))) {
+    const [m, e] = num(n).toExponential(2).split('e');
+    return `${+m}e${+e}`;
+  }
+  // past 1e308 a JavaScript number is Infinity: read it off the digits instead
+  let d;
+  try { d = big(n).toString(); } catch { return '∞'; }
+  return `${+`${d[0]}.${d.slice(1, 3)}`}e${d.length - 1}`;
 }

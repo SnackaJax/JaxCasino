@@ -5,13 +5,13 @@ import math
 import discord
 
 import config
-from utils.bignum import div_floor, mul_ceil, parse_decimal
+from utils.bignum import credits_text, div_floor, mul_ceil, parse_decimal
 
 log = logging.getLogger("jaxcasino.bets")
 
 
 def fmt(amount: int) -> str:
-    return f"**{amount:,}** {config.COIN}"
+    return f"**{credits_text(amount)}** {config.COIN}"
 
 
 def buy_limit_note() -> str:
@@ -110,8 +110,8 @@ class Wager:
         if record:
             await self.db.record_game(self.guild_id, self.user_id, self.stake, self.payout, self.game)
         log.info("%s: user %s %s stake %s, paid %s, balance %s", self.game, self.user_id,
-                 "settled" if record else "refunded", f"{self.stake:,}", f"{self.payout:,}",
-                 f"{self.balance_after:,}")
+                 "settled" if record else "refunded", f"{credits_text(self.stake)}", f"{credits_text(self.payout)}",
+                 f"{credits_text(self.balance_after)}")
         if record and self.balance_after < config.MIN_BET:
             from utils.restart import offer_later
             offer_later(self.channel, self.db, self.guild_id, self.user_id)
@@ -191,7 +191,7 @@ async def refund_unposted(interaction: discord.Interaction) -> None:
             log.exception("%s: couldn't refund bet #%s of user %s", wager.game, wager.escrow_id, wager.user_id)
             continue
         log.warning("%s: game for user %s was never shown, refunded %s (escrow #%s)",
-                    wager.game, wager.user_id, f"{wager.stake:,}", wager.escrow_id)
+                    wager.game, wager.user_id, f"{credits_text(wager.stake)}", wager.escrow_id)
         if wager.channel is not None:
             try:
                 await wager.channel.send(

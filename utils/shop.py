@@ -7,6 +7,7 @@ cost the same.
 from dataclasses import dataclass
 
 import config
+from utils.bignum import credits_text
 
 
 @dataclass(frozen=True)
@@ -68,7 +69,7 @@ async def get_prices(db, guild_id: int) -> dict[str, int]:
 
 
 def price_text(price: int) -> str:
-    return "Not for sale" if price <= 0 else f"**{price:,}** {config.COIN}"
+    return "Not for sale" if price <= 0 else f"**{credits_text(price)}** {config.COIN}"
 
 
 def item_price_text(item: Item, prices: dict[str, int]) -> str:

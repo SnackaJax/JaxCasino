@@ -12,7 +12,7 @@ from utils.checks import gambling_only
 from utils.economy import Wager, fmt, fmt_mult, result_color, result_line, take_bet, tag
 from utils.rng import rng
 from utils.views import OwnedView
-from utils.bignum import mul_floor
+from utils.bignum import credits_text, mul_floor
 
 log = logging.getLogger("jaxcasino.crash")
 
@@ -116,7 +116,7 @@ class CrashView(OwnedView):
                 await self.finish(None)
                 return
             self.current = m
-            self.cash_btn.label = f"Cash out {mul_floor(self.wager.stake, m):,}"
+            self.cash_btn.label = f"Cash out {credits_text(mul_floor(self.wager.stake, m))}"
             try:
                 await self.message.edit(embed=self.embed(), view=self)
             except discord.HTTPException:

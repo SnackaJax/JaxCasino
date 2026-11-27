@@ -15,6 +15,7 @@ from utils.balance_image import BalanceInfo, render_balance, signed
 from utils.economy import fmt
 from utils.stats_image import short
 from utils.views import OwnedView
+from utils.bignum import credits_text
 
 log = logging.getLogger("jaxcasino.playerstats")
 
@@ -84,11 +85,11 @@ def build_page(name: str, period: str, points, st: dict, current: int, rebuilt_u
     games, wins = st["games"], st["wins"]
     winrate = f"{wins / games * 100:.0f}% won" if games else "no games"
     kpis = [
-        ("Balance", short(current), f"{current:,} credits"),
+        ("Balance", short(current), f"{credits_text(current)} credits"),
         ("Change", signed(change), f"{pct} from {short(start)}"),
         ("Peak", short(peak[1]), when(peak[0])),
         ("Lowest", short(low[1]), f"biggest drop −{short(dd)}" if dd else when(low[0])),
-        ("Games", f"{games:,}", f"{winrate} · {short(st['wagered'])} bet"),
+        ("Games", f"{credits_text(games)}", f"{winrate} · {short(st['wagered'])} bet"),
     ]
     sources = [("Games", st["paid"] - st["wagered"])]
     money = st["money"]
@@ -124,7 +125,7 @@ def build_page(name: str, period: str, points, st: dict, current: int, rebuilt_u
         best_game = max(rows, key=lambda g: g["net"])
         if best_game["net"] > 0 and best_game["game"] != "Other":
             lines.append(f"🎯 **Best game:** {game_name(best_game['game'])} ({'+' if best_game['net'] > 0 else ''}"
-                         f"{best_game['net']:,})")
+                         f"{credits_text(best_game['net'])})")
     return info, lines
 
 
@@ -193,7 +194,7 @@ class PlayerStats(commands.Cog):
         played = user["games_played"]
         winrate = f"{user['wins'] / played * 100:.1f}%" if played else "—"
         net = user["total_won"] - user["total_wagered"]
-        lines.append(f"🎮 **All-time:** {played:,} games · {winrate} won · {fmt(user['total_wagered'])} wagered · "
+        lines.append(f"🎮 **All-time:** {credits_text(played)} games · {winrate} won · {fmt(user['total_wagered'])} wagered · "
                      f"net {'+' if net >= 0 else '-'}{fmt(abs(net))} · best win {fmt(user['biggest_win'])}")
         streaks = await db.best_streaks(guild.id, member.id)
         if streaks:

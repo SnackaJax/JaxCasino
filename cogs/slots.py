@@ -23,7 +23,7 @@ from utils.economy import buy_limit_note, fmt, result_color, result_line, send_e
 from utils.rng import rng
 from utils.slot_image import SlotFrame, render, render_paylines
 from utils.views import BaseView
-from utils.bignum import mul_floor
+from utils.bignum import credits_text, mul_floor
 
 log = logging.getLogger("jaxcasino.slots")
 
@@ -76,8 +76,8 @@ def spin_message(stake: int, result: E.SpinResult) -> str:
     total = sum(credits(stake, w.pay) for w in result.wins)
     if len(result.wins) == 1:
         w = result.wins[0]
-        return f"Line {w.line + 1} · {w.count}× {E.SYMBOLS[w.symbol][0]} · {total:,}"
-    return f"{len(result.wins)} winning lines · {total:,}"
+        return f"Line {w.line + 1} · {w.count}× {E.SYMBOLS[w.symbol][0]} · {credits_text(total)}"
+    return f"{len(result.wins)} winning lines · {credits_text(total)}"
 
 
 def embed(user: discord.abc.User, description: str, color=discord.Color.purple()) -> discord.Embed:
@@ -100,7 +100,7 @@ def paytable_embed() -> discord.Embed:
         f"{sym_name(E.WILD)} — lands on reels 2–6 and stands in for every symbol except the comet.\n"
         f"{sym_name(E.SCATTER)} — 3 or more anywhere start free spins ({spins} spins). During free spins every "
         f"wild that lands **sticks** until they end, and 3 more comets add {E.RETRIGGER_SPINS} spins.\n\n"
-        f"Maximum win: {E.MAX_WIN:,}x your bet per spin. Returns {config.SLOTS_RTP * 100:g}% of bets "
+        f"Maximum win: {credits_text(E.MAX_WIN)}x your bet per spin. Returns {config.SLOTS_RTP * 100:g}% of bets "
         f"on average."
         + (f"\n\n**Bonus buy:** `/slots buy:{E.BUY_NAME}` costs **{E.BUY_PRICE:g}x** your bet for a spin that is "
            f"sure to land {E.BUY_COMETS} comets ({E.FREE_SPINS[E.BUY_COMETS]} free spins). It pays back "
@@ -284,20 +284,20 @@ class Slots(commands.Cog):
             else:
                 lines += win_lines_text(stake, base)
             if payout >= cap:
-                lines.append(f"🏆 **Maximum win reached: {E.MAX_WIN:,}x!**")
+                lines.append(f"🏆 **Maximum win reached: {credits_text(E.MAX_WIN)}x!**")
             lines.append("")
             if mode != "spin":
                 lines.append(f"Bonus buy: paid {fmt(paid)} ({E.BUY_PRICE:g}x your bet of {fmt(stake)}).")
             lines.append(result_line(paid, payout, bal))
             if played:
-                msg = f"FREE SPINS WON {payout - base_won:,}" if payout > base_won else "No free spin wins"
+                msg = f"FREE SPINS WON {credits_text(payout - base_won)}" if payout > base_won else "No free spin wins"
                 frame = frame_for(rnd.free[played - 1], stake, payout, message=msg, free=(played, played))
             else:
                 frame = frame_for(base, stake, payout, message=spin_message(stake, base))
             view.set_busy(False)
             await show(frame, "\n".join(lines), color=result_color(paid, payout))
             log.info("slots: user %s %s bet %s (paid %s), %d line wins, %d free spins, won %s", user.id, mode,
-                     f"{stake:,}", f"{paid:,}", len(base.wins), played, f"{payout:,}")
+                     f"{credits_text(stake)}", f"{credits_text(paid)}", len(base.wins), played, f"{credits_text(payout)}")
         except Exception:
             # Never leave the bet in limbo. If the spin never appeared, the error handler refunds it
             # (refund_unposted); once it was on screen, the round was decided up front, so pay its full result.
@@ -331,7 +331,7 @@ class Slots(commands.Cog):
             if retrigger:
                 total = min(total + E.RETRIGGER_SPINS, E.MAX_FREE_SPINS)
             msg = (f"+{E.RETRIGGER_SPINS} FREE SPINS!" if retrigger
-                   else f"Free spin win {spin_won:,}" if spin_won
+                   else f"Free spin win {credits_text(spin_won)}" if spin_won
                    else f"+{len(new_wilds)} STICKY WILD{'S' if len(new_wilds) != 1 else ''}!" if new_wilds
                    else "No win")
             text = "\n".join([f"☄️ Free spin **{i}** of **{total}** · won so far {fmt(won)}",

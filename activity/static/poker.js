@@ -112,7 +112,7 @@ function onMessage(m) {
 // the balance in the header, shortened on narrow screens (9.08M) so the header always fits
 function showBalance() {
   const el = $('balance');
-  el.textContent = innerWidth < 520 && balance >= 1e6 ? shortNum(balance) : fmt(balance);
+  el.textContent = (innerWidth < 520 && balance >= 1e6) || num(balance) >= 1e30 ? shortNum(balance) : fmt(balance);
   el.parentElement.title = `${fmt(balance)} credits`;
 }
 window.addEventListener('resize', () => {
@@ -322,8 +322,8 @@ let built = null;   // the state the seats were built for (positions depend on i
 // an amount shortened to at most 4 digits: 12.5k, 250k, 2.5M, 9.08M, 487.5M, 1.25B (never "1000M")
 function shortNum(n) {
   if (num(n) < 1e4) return fmt(n);
+  if (huge(n)) return huge(n);   // the digits, not the number: past 1e308 that's Infinity
   n = num(n);
-  if (huge(n)) return huge(n);
   for (const [d, u] of [...BIG_UNITS, [1e12, 'T'], [1e9, 'B'], [1e6, 'M'], [1e3, 'k']]) {
     const x = n / d, t = +x.toFixed(x < 10 ? 2 : 1);
     if (t >= 1) return `${t}${u}`;

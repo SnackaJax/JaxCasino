@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import math
 import sys
-from utils.bignum import mul_ceil, mul_floor
+from utils.bignum import credits_text, mul_ceil, mul_floor
 
 COLS = ROWS = 7
 N = COLS * ROWS
@@ -472,7 +472,7 @@ def _simulate(n: int, mode: str = "spin") -> None:
     mean = tot["total"] / n
     sd = math.sqrt(max(tot["sq"] / n - mean * mean, 0))
     ci = 1.96 * sd / math.sqrt(n)
-    print(f"[{mode}] {n:,} spins in {time.time() - t0:.0f}s on {workers} cores")
+    print(f"[{mode}] {credits_text(n)} spins in {time.time() - t0:.0f}s on {workers} cores")
     print(f"raw payback {mean:.4f} ± {ci:.4f} (95%), sd per spin {sd:.2f}")
     if mode != "spin":
         cost = price(mode)

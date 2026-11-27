@@ -13,6 +13,7 @@ import config
 from utils.economy import fmt
 from utils.stats_image import StatsInfo, render_stats, short
 from utils.views import OwnedView
+from utils.bignum import credits_text
 
 log = logging.getLogger("jaxcasino.serverstats")
 
@@ -44,7 +45,7 @@ def game_name(key: str) -> str:
 
 
 def signed(n: int) -> str:
-    return f"+{n:,}" if n > 0 else f"−{-n:,}" if n < 0 else "0"
+    return f"+{credits_text(n)}" if n > 0 else f"−{credits_text(-n)}" if n < 0 else "0"
 
 
 def pct(part: float, whole: float) -> str:
@@ -59,11 +60,11 @@ def build_info(server: str, period: str, st: dict, circulation: list, period_sta
     else:
         edge = "no bets yet"
     kpis = [
-        ("Wagered", short(st["wagered"]), f"{st['wagered']:,} credits"),
-        ("Paid out", short(st["paid"]), f"{st['paid']:,} credits"),
+        ("Wagered", short(st["wagered"]), f"{credits_text(st['wagered'])} credits"),
+        ("Paid out", short(st["paid"]), f"{credits_text(st['paid'])} credits"),
         ("House profit", ("−" if profit < 0 else "") + short(abs(profit)), edge),
-        ("Games played", f"{st['games']:,}", f"by {st['players']:,} player{'s' if st['players'] != 1 else ''}"),
-        ("Player win rate", pct(st["wins"], st["games"]), f"{st['wins']:,} games won"),
+        ("Games played", f"{credits_text(st['games'])}", f"by {credits_text(st['players'])} player{'s' if st['players'] != 1 else ''}"),
+        ("Player win rate", pct(st["wins"], st["games"]), f"{credits_text(st['wins'])} games won"),
     ]
     rows = [(game_name(g["game"]), g["wagered"], g["plays"]) for g in st["per_game"] if g["wagered"]]
     if len(rows) > MAX_GAME_ROWS:  # fold the tail into "Other" rather than shrinking every row
@@ -105,7 +106,7 @@ def build_embed(period: str, st: dict) -> discord.Embed:
             lines.append(f"🎲 **High roller:** <@{u['user_id']}> wagered {fmt(u['wagered'])}")
     if u := st["most_active"]:
         if u["plays"]:
-            lines.append(f"🔥 **Most active:** <@{u['user_id']}> with {u['plays']:,} games")
+            lines.append(f"🔥 **Most active:** <@{u['user_id']}> with {credits_text(u['plays'])} games")
     if u := st["luckiest"]:
         if u["net"] > 0:
             lines.append(f"🍀 **Luckiest:** <@{u['user_id']}> is up {fmt(u['net'])}")
@@ -128,23 +129,23 @@ def build_embed(period: str, st: dict) -> discord.Embed:
         embed.add_field(name="Highlights", value="\n".join(lines)[:1024], inline=False)
 
     money = st["money"]
-    eco = [f"💰 **In circulation:** {fmt(st['circulating'])} across {st['accounts']:,} accounts"]
+    eco = [f"💰 **In circulation:** {fmt(st['circulating'])} across {credits_text(st['accounts'])} accounts"]
     if r := st["richest"]:
         eco.append(f"👑 **Richest:** <@{r['user_id']}> with {fmt(r['balance'])}")
     if c := money.get("claim"):
-        eco.append(f"🎁 **Daily claims:** {fmt(c['amount'])} from {c['n']:,} claims")
+        eco.append(f"🎁 **Daily claims:** {fmt(c['amount'])} from {credits_text(c['n'])} claims")
     if r := money.get("restart"):
-        eco.append(f"🔄 **Restarts:** {r['n']:,} broke player{'s' if r['n'] != 1 else ''} "
+        eco.append(f"🔄 **Restarts:** {credits_text(r['n'])} broke player{'s' if r['n'] != 1 else ''} "
                    f"got back in with {fmt(r['amount'])}")
     if p := money.get("pay"):
-        eco.append(f"🤝 **Player payments:** {fmt(p['amount'])} in {p['n']:,} payments")
+        eco.append(f"🤝 **Player payments:** {fmt(p['amount'])} in {credits_text(p['n'])} payments")
     if a := money.get("admin"):
         parts = []
         if a["added"]:
-            parts.append(f"{a['added']:,} given")
+            parts.append(f"{credits_text(a['added'])} given")
         if a["removed"]:
-            parts.append(f"{a['removed']:,} removed")
-        eco.append(f"🛠️ **Admin changes:** {' · '.join(parts)} ({a['n']:,} change{'s' if a['n'] != 1 else ''})")
+            parts.append(f"{credits_text(a['removed'])} removed")
+        eco.append(f"🛠️ **Admin changes:** {' · '.join(parts)} ({credits_text(a['n'])} change{'s' if a['n'] != 1 else ''})")
     if s := money.get("shop"):
         if s["amount"] < 0:
             eco.append(f"🛒 **Shop:** {fmt(-s['amount'])} spent")

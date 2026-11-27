@@ -13,7 +13,7 @@ from utils.checks import gambling_only
 from utils.economy import Wager, fmt, fmt_mult, keep_bet, send_error, take_bet, tag
 from utils.views import BaseModal, BaseView
 from utils.rng import rng
-from utils.bignum import mul_floor
+from utils.bignum import credits_text, mul_floor
 
 log = logging.getLogger("jaxcasino.horserace")
 
@@ -57,12 +57,12 @@ class Race:
             totals[h] += w.stake
         embed.description = "\n".join(
             f"{self.horse_label(i)} — pays {fmt_mult(self.odds[i])}"
-            + (f" · {totals[i]:,} bet" if totals[i] else "")
+            + (f" · {credits_text(totals[i])} bet" if totals[i] else "")
             for i in range(len(HORSES))
         )
         embed.description += f"\n\nBetting closes <t:{int(self.closes_at)}:R>. Click a horse to bet!"
         if self.bets:
-            lines = [f"{u.mention} — {w.stake:,} on {HORSES[h][0]}" for u, h, w in self.bets[-15:]]
+            lines = [f"{u.mention} — {credits_text(w.stake)} on {HORSES[h][0]}" for u, h, w in self.bets[-15:]]
             embed.add_field(name=f"Bets ({len(self.bets)})", value="\n".join(lines), inline=False)
         embed.set_footer(text=f"Started by {self.host.display_name}")
         return embed

@@ -157,8 +157,8 @@ function toast(text, good = false) {
 }
 // big balances are shortened on phones (247.2M) so the header fits; the full number is in the tooltip
 function shortAmount(n) {
+  if (huge(n)) return huge(n);   // the digits, not the number: past 1e308 that's Infinity
   n = num(n);
-  if (huge(n)) return huge(n);
   for (const [d, u] of [...BIG_UNITS, [1e12, 'T'], [1e9, 'B'], [1e6, 'M']]) {
     const x = n / d, t = +x.toFixed(x >= 100 ? 1 : 2);
     if (t >= 1) return `${t}${u}`;
@@ -171,7 +171,7 @@ const betText = (v) => (v >= 1e6 ? shortAmount(v) : fmt(v));
 const amt = (v) => (v >= 1e9 || (v >= 1e6 && window.innerWidth < 520) ? shortAmount(v) : fmt(v));
 function setShownBalance(v, bumpIt = false) {
   shownBalance = v;
-  $('balance').textContent = window.innerWidth < 520 && v >= 1e6 ? shortAmount(v) : fmt(v);
+  $('balance').textContent = (window.innerWidth < 520 && v >= 1e6) || num(v) >= 1e30 ? shortAmount(v) : fmt(v);
   $('balance').parentElement.title = `${fmt(v)} credits`;
   if (bumpIt) { const b = $('balance').parentElement; b.classList.remove('bump'); void b.offsetWidth; b.classList.add('bump'); }
 }

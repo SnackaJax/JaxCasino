@@ -11,7 +11,7 @@ from utils.checks import gambling_only
 from utils.economy import Wager, fmt, fmt_mult, result_color, result_line, take_bet, tag
 from utils.rng import rng
 from utils.views import OwnedView
-from utils.bignum import mul_floor
+from utils.bignum import credits_text, mul_floor
 
 FLOORS = 8
 # difficulty: (doors per floor, traps per floor)
@@ -65,7 +65,7 @@ class TowerView(OwnedView):
             if isinstance(item, Door):
                 item.disabled = self.finished
         self.cashout.disabled = self.finished or self.floor == 0
-        self.cashout.label = f"Cash out {mul_floor(self.wager.stake, self.mult_at(self.floor)):,}"
+        self.cashout.label = f"Cash out {credits_text(mul_floor(self.wager.stake, self.mult_at(self.floor)))}"
 
     def tower_text(self) -> str:
         lines = []

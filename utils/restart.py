@@ -12,6 +12,7 @@ import discord
 import config
 from utils.economy import fmt
 from utils.views import OwnedView
+from utils.bignum import credits_text
 
 log = logging.getLogger("jaxcasino.restart")
 
@@ -85,7 +86,7 @@ class RestartView(OwnedView):
     def refresh(self) -> None:
         left = config.RESTART_PRESSES - self.done
         if config.RESTART_PRESSES == 1:
-            self.press_btn.label = f"Restart with {config.RESTART_AMOUNT:,} credits"
+            self.press_btn.label = f"Restart with {credits_text(config.RESTART_AMOUNT)} credits"
         else:
             self.press_btn.label = f"Press to restart ({left} left)"
         self.press_btn.style = discord.ButtonStyle.success if left == 1 else discord.ButtonStyle.danger
@@ -143,7 +144,7 @@ async def send_panel(interaction: discord.Interaction) -> None:
     if status != "ok":
         embed = blocked_embed(status, balance, until)
         if status == "in_game" or status == "paid":
-            embed.title = f"💀 Not enough credits ({balance:,})"
+            embed.title = f"💀 Not enough credits ({credits_text(balance)})"
         await _respond(interaction, embed=embed)
         return
     view = RestartView(db, interaction.guild_id, interaction.user.id, balance)

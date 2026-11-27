@@ -281,16 +281,18 @@ class Connection(sqlite3.Connection):
 
 
 # ------------------------------------------------------------------ JSON for the browser
-def jsonable(obj):
-    """A copy of obj where every whole number past 2^53 (JavaScript's exact limit) is a string of its digits."""
+def jsonable(obj, exact: frozenset | None = None, key=None):
+    """A copy of obj where every whole number past 2^53 (JavaScript's exact limit) is a string of its digits. With
+    `exact`, only the values under those keys are (the rest stay numbers: the page then gets them as the nearest
+    JavaScript number, which it can add up and compare, where a string would be joined instead of added)."""
     if isinstance(obj, bool) or obj is None:
         return obj
     if isinstance(obj, int):
-        return str(obj) if abs(obj) > JS_SAFE else obj
+        return str(obj) if abs(obj) > JS_SAFE and (exact is None or key in exact) else obj
     if isinstance(obj, dict):
-        return {k: jsonable(v) for k, v in obj.items()}
+        return {k: jsonable(v, exact, k) for k, v in obj.items()}
     if isinstance(obj, (list, tuple)):
-        return [jsonable(v) for v in obj]
+        return [jsonable(v, exact, key) for v in obj]
     return obj
 
 
@@ -299,8 +301,24 @@ def dumps(obj, **kwargs) -> str:
     return json.dumps(jsonable(obj), **kwargs)
 
 
-def compact_dumps(obj) -> str:
-    return json.dumps(jsonable(obj), separators=(",", ":"))
+def compact_dumps(obj, exact: frozenset | None = None) -> str:
+    return json.dumps(jsonable(obj, exact), separators=(",", ":"))
+
+
+def json_int(v) -> int | None:
+    """A whole number of credits sent by a page: an int, a string of digits, or a JavaScript number past 2^53, which
+    arrives as a float (JSON.stringify writes the shortest form, such as 2.5e+21, and that's read back exactly).
+    None when it isn't a whole number."""
+    if isinstance(v, bool):
+        return None
+    if isinstance(v, int):
+        return v
+    if isinstance(v, str):
+        return int(v) if len(v) <= MAX_INPUT and _DIGITS.fullmatch(v.strip()) else None
+    if isinstance(v, float) and math.isfinite(v):
+        d = Decimal(repr(v))
+        return int(d) if d == d.to_integral_value() else None
+    return None
 
 
 def tagged(obj):
@@ -340,6 +358,21 @@ def short(n: int, digits: int = 2) -> str:
     if t >= 1000 and i + 1 < len(SUFFIXES):   # 999.96B reads as 1T
         suffix, t = SUFFIXES[i + 1][0], round(x / 1000, digits)
     return f"{sign}{t:g}{suffix}"
+
+
+AMOUNT_DIGITS = 30
+
+
+def credits_text(n) -> str:
+    """An amount for Discord: in full with commas up to AMOUNT_DIGITS digits (999 octillion), short beyond that
+    (1.25No, 7.05e51). Discord caps a button label at 80 characters, an embed field at 1,024 and a message at 2,000,
+    and balances have no upper limit, so the full digits can't always fit. Anything that isn't a whole number is
+    written as f"{n:,}" would."""
+    if isinstance(n, bool) or not isinstance(n, int):
+        return f"{n:,}"
+    if len(str(abs(n))) <= AMOUNT_DIGITS:
+        return f"{n:,}"
+    return short(n)
 
 
 def parse_decimal(s: str) -> Decimal | None:

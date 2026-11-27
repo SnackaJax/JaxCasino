@@ -10,6 +10,7 @@ from utils.restart import offer_later
 from utils.rng import rng
 
 import logging
+from utils.bignum import credits_text
 
 log = logging.getLogger("jaxcasino.lottery")
 
@@ -57,11 +58,11 @@ class Lottery(commands.Cog):
         total = sum(weights)
         mine = weights[users.index(winner)]
         log.info("Lottery in guild %s: user %s won %s (bank bonus %s) with %d of %d tickets",
-                 guild_id, winner, f"{pot + bonus:,}", f"{bonus:,}", mine, total)
+                 guild_id, winner, f"{credits_text(pot + bonus)}", f"{credits_text(bonus)}", mine, total)
         return discord.Embed(
             title="🎉 Lottery Draw!", color=discord.Color.gold(),
             description=(f"<@{winner}> won the jackpot of {jackpot_text(pot)}!\n"
-                         f"They held {mine:,} of {total:,} tickets ({mine / total * 100:.1f}% chance).\n\n"
+                         f"They held {credits_text(mine)} of {credits_text(total)} tickets ({mine / total * 100:.1f}% chance).\n\n"
                          f"A new round has started — `/lottery buy` to enter.")), winner
 
     @tasks.loop(minutes=1)
@@ -79,7 +80,7 @@ class Lottery(commands.Cog):
     async def before_draw(self):
         await self.bot.wait_until_ready()
 
-    @lottery.command(name="buy", description=f"Buy lottery tickets ({config.LOTTERY_TICKET_PRICE:,} credits each).")
+    @lottery.command(name="buy", description=f"Buy lottery tickets ({credits_text(config.LOTTERY_TICKET_PRICE)} credits each).")
     @app_commands.describe(tickets="How many tickets to buy")
     @gambling_only()
     async def buy(self, interaction: discord.Interaction, tickets: app_commands.Range[int, 1, 100000] = 1):
@@ -88,14 +89,14 @@ class Lottery(commands.Cog):
                                            interaction.channel_id)
         if not ok:
             bal = await self.bot.db.get_balance(interaction.guild_id, interaction.user.id)
-            await send_error(interaction, f"{tickets:,} tickets cost {fmt(tickets * price)} — you have {fmt(bal)}.")
+            await send_error(interaction, f"{credits_text(tickets)} tickets cost {fmt(tickets * price)} — you have {fmt(bal)}.")
             return
         state = await self.bot.db.lottery_state(interaction.guild_id)
         if await self.bot.db.get_balance(interaction.guild_id, interaction.user.id) < config.MIN_BET:
             offer_later(interaction.channel, self.bot.db, interaction.guild_id, interaction.user.id)
         embed = discord.Embed(
             title="🎟️ Tickets bought", color=discord.Color.green(),
-            description=(f"{interaction.user.mention} bought **{tickets:,}** ticket(s) for {fmt(tickets * price)}.\n"
+            description=(f"{interaction.user.mention} bought **{credits_text(tickets)}** ticket(s) for {fmt(tickets * price)}.\n"
                          f"Jackpot is now {jackpot_text(state['pot'])} · draw <t:{int(state['draw_at'])}:R>"))
         await interaction.response.send_message(**tag(interaction.user), embed=embed)
 
@@ -109,9 +110,9 @@ class Lottery(commands.Cog):
         embed.add_field(name="Jackpot", value=jackpot_text(state["pot"]))
         embed.add_field(name="Next draw", value=f"<t:{int(state['draw_at'])}:R>")
         embed.add_field(name="Ticket price", value=fmt(config.LOTTERY_TICKET_PRICE))
-        embed.add_field(name="Tickets sold", value=f"{total:,} ({len(tickets)} players)")
+        embed.add_field(name="Tickets sold", value=f"{credits_text(total)} ({len(tickets)} players)")
         chance = f" ({mine / total * 100:.1f}% chance)" if mine else ""
-        embed.add_field(name="Your tickets", value=f"{mine:,}{chance}")
+        embed.add_field(name="Your tickets", value=f"{credits_text(mine)}{chance}")
         await interaction.response.send_message(embed=embed)
 
     @lottery.command(name="draw", description="Draw the lottery right now (admins only).")

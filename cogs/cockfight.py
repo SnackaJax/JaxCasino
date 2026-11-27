@@ -13,7 +13,7 @@ from utils.checks import gambling_only
 from utils.economy import fmt, result_color, result_line, send_error, take_bet, tag
 from utils.rng import rng
 from utils.shop import get_prices, price_text
-from utils.bignum import mul_floor
+from utils.bignum import credits_text, mul_floor
 
 log = logging.getLogger("jaxcasino.cockfight")
 
@@ -84,11 +84,11 @@ class Cockfight(commands.Cog):
         chance = win_chance(wins)
         mult = payout_mult()
         opp = rng.choice(OPPONENTS)
-        header = (f"🐓 **Your chicken** ({wins:,} win{'s' if wins != 1 else ''}) vs 🐔 **{opp}**\n"
+        header = (f"🐓 **Your chicken** ({credits_text(wins)} win{'s' if wins != 1 else ''}) vs 🐔 **{opp}**\n"
                   f"Win chance: **{pct(chance)}** · pays {mult}x")
         embed = discord.Embed(title="🐓 Cockfight", color=discord.Color.orange(),
                               description=f"{header}\n\nThe fighters enter the ring...")
-        embed.set_footer(text=f"Bet {wager.stake:,}")
+        embed.set_footer(text=f"Bet {credits_text(wager.stake)}")
         await interaction.response.send_message(**tag(interaction.user), embed=embed)
 
         for line in rng.sample(ACTION, 2):
@@ -102,13 +102,13 @@ class Cockfight(commands.Cog):
             new_wins = await db.chicken_won(gid, uid)
             payout = mul_floor(wager.stake, mult)
             outcome = (f"🏆 **Your chicken won!** {opp} runs off in shame.\n"
-                       f"It now has **{new_wins:,}** win{'s' if new_wins != 1 else ''}, and its win chance in the "
+                       f"It now has **{credits_text(new_wins)}** win{'s' if new_wins != 1 else ''}, and its win chance in the "
                        f"next fight is **{pct(win_chance(new_wins))}**.")
         else:
             await db.kill_chicken(gid, uid)
             payout = 0
             outcome = (f"💀 **Your chicken died** at the claws of {opp}"
-                       + (f" after {wins:,} win{'s' if wins != 1 else ''}." if wins else ".")
+                       + (f" after {credits_text(wins)} win{'s' if wins != 1 else ''}." if wins else ".")
                        + "\nBuy a new one with `/buy chicken`.")
         bal = await wager.settle(payout)
         log.info("cockfight: user %s's chicken (%d wins, %.0f%%) %s", uid, wins, chance * 100,
@@ -127,7 +127,7 @@ class Cockfight(commands.Cog):
             return
         wins = row["wins"]
         embed = discord.Embed(title=f"🐓 {user.display_name}'s chicken", color=discord.Color.orange())
-        embed.add_field(name="Wins", value=f"{wins:,}")
+        embed.add_field(name="Wins", value=f"{credits_text(wins)}")
         embed.add_field(name="Win chance", value=pct(win_chance(wins)))
         embed.add_field(name="Hatched", value=f"<t:{int(row['born'])}:R>")
         if win_chance(wins) >= config.COCKFIGHT_MAX_CHANCE:

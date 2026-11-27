@@ -19,7 +19,7 @@ const srv = () => Date.now() + offset;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const easeOut = (p) => 1 - Math.pow(1 - p, 4);
 // fmt: exact for any size (big balances arrive as strings of digits)
-import { fmt, num, minus, BIG_UNITS, huge } from './money.js';
+import { fmt, num, minus, BIG_UNITS, huge, shortBig } from './money.js';
 function short(n) {
   if (n >= 1e6) return (n / 1e6).toFixed(n >= 1e7 ? 0 : 1).replace(/\.0$/, '') + 'M';
   if (n >= 1e3) return (n / 1e3).toFixed(n >= 1e4 ? 0 : 1).replace(/\.0$/, '') + 'k';
@@ -288,7 +288,8 @@ function avatarHtml(p, cls = '') {
 
 function render() {
   if (!W || !S) return;
-  $('balance').textContent = fmt(ME.balance);
+  $('balance').textContent = num(ME.balance) >= 1e30 ? shortBig(ME.balance) : fmt(ME.balance);
+  $('balance').title = `${fmt(ME.balance)} credits`;
   const myTotal = Object.values(ME.bets || {}).reduce((a, b) => a + b, 0);
   $('myTotal').textContent = fmt(myTotal);
   const betting = S.phase === 'betting';

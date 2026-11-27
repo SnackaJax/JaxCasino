@@ -24,6 +24,12 @@
     <!-- the blackjack room: open tables and a form to open a new one -->
     <main class="room" id="room">
       <section class="room-main">
+        <!-- double side bets switched on in the admin panel: a neon sign over the tables -->
+        <div class="neon-sign hidden" id="neonSign" role="note" aria-label="Double side bets: every Perfect Pairs and 21+3 win is paid double">
+          <span class="neon-suit l" aria-hidden="true">♠</span><span class="neon-suit r" aria-hidden="true">♥</span>
+          <div class="neon-tube" aria-hidden="true"><span class="neon-two">2×</span><span class="neon-word">SIDE BETS</span></div>
+          <div class="neon-sub" aria-hidden="true">PERFECT PAIRS <i>&amp;</i> 21+3 · EVERY WIN PAID DOUBLE</div>
+        </div>
         <h2>Tables</h2>
         <div class="tables" id="tables"></div>
       </section>
@@ -70,6 +76,7 @@
         <div class="cards-layer" id="cardsLayer"></div>
         <div class="fly-layer" id="flyLayer"></div>
         <div class="center-msg hidden" id="centerMsg"></div>
+        <div class="neon-badge hidden" id="neonBadge" title="Side bets pay double: every win is paid out, then doubled"><span class="neon-two">2×</span><span class="neon-word">SIDE BETS</span></div>
         <div class="banner hidden" id="banner"></div>
         <div class="chat-layer" id="chatLayer"></div>
       </section>

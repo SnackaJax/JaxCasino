@@ -4,6 +4,7 @@ import {
   ChartPieSliceIcon,
   ClockCounterClockwiseIcon,
   GameControllerIcon,
+  GearSixIcon,
   PulseIcon,
   SignOutIcon,
   UsersThreeIcon,
@@ -16,6 +17,7 @@ import { EditsPage } from "@/app/pages/edits"
 import { GamesPage } from "@/app/pages/games"
 import { OverviewPage } from "@/app/pages/overview"
 import { PlayersPage } from "@/app/pages/players"
+import { SettingsPage } from "@/app/pages/settings"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
@@ -26,6 +28,7 @@ const PAGES = {
   players: { label: "Players", icon: UsersThreeIcon },
   activity: { label: "Activity", icon: PulseIcon },
   edits: { label: "Balance edits", icon: ClockCounterClockwiseIcon },
+  settings: { label: "Game settings", icon: GearSixIcon },
 } as const
 type PageKey =
   | keyof typeof PAGES
@@ -126,6 +129,8 @@ export function Shell({ session }: { session: Session }) {
           <ActivityPage key={guild.id} guild={guild} />
         ) : page === "edits" ? (
           <EditsPage guild={guild} />
+        ) : page === "settings" ? (
+          <SettingsPage key={guild.id} guild={guild} />
         ) : (
           <Centered>That page isn't available.</Centered>
         )}

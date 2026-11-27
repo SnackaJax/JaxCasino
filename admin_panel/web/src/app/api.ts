@@ -45,6 +45,12 @@ export type Session = {
   discord?: boolean
 }
 
+/** The server's game switches (GET/POST /api/settings) */
+export type GameSettings = {
+  /** blackjack in the Activity: side bet wins are paid out, then doubled */
+  bj_double_side: boolean
+}
+
 export type Guild = {
   id: string
   name: string

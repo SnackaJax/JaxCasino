@@ -45,6 +45,13 @@ class BotDirectory:
                     "avatar": user.display_avatar.with_size(64).with_static_format("png").url, "in_server": False}
         return None
 
+    async def setting_changed(self, guild_id: int, key: str, value) -> None:
+        """A game switch changed in the panel (it's already saved): the running games pick it up now."""
+        if key == "bj_double_side":
+            server = getattr(self.bot.get_cog("SpinFrenzy"), "server", None)
+            if server is not None:
+                await server.blackjack.set_double_side(guild_id, bool(value))
+
     async def crux_started(self, guild_id: int, user_id: int, until: float) -> None:
         """A crux given in the panel: their open casino games close and show the crux screen."""
         from cogs.crux import kick_from_activity

@@ -41,6 +41,9 @@ class FakeDirectory:
     async def crux_started(self, guild_id: int, user_id: int, until: float) -> None:
         pass   # no casino here to close games in
 
+    async def setting_changed(self, guild_id: int, key: str, value) -> None:
+        pass   # no games running here to tell
+
     def client_id(self) -> int | None:
         return None   # no Discord sign-in on the test server: the password is "dev"
 

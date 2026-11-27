@@ -10,6 +10,10 @@ Two side bets, each at most the player's main bet, settled right after the deal:
   21+3 (the player's first two cards and the dealer's face-up card as a poker hand): suited trips 100:1,
        straight flush 40:1, three of a kind 30:1, straight 10:1, flush 5:1
 They return about 94% and 95.5% (6 decks, with the dealer face-up card rule above).
+Double side bets (a switch per server in the admin panel, the "bj_double_side" setting): a side bet win is paid out
+as usual (stake and winnings) and then that whole amount is doubled, so 100 on a mixed pair returns 1,400 instead of
+700. That makes the side bets return about 188% and 191%, so it's meant for short promotions. A switch takes effect
+from the next deal: a round that's already dealt keeps the payout it was dealt with.
 
 Every server has one blackjack room; anyone in it (from any voice call or text channel) sees its tables, can watch
 one, open a new one (minimum bet and 1-7 seats) or sit down. There is no buy-in: every round each seated player
@@ -34,7 +38,7 @@ their seats a message is for; without it, "bet" goes to their first seat and the
   {"type": "chat", "id": int}                               a quick chat (an emote or a phrase from QUICK_CHATS)
 The server sends "welcome", "room" (the list of tables), "table" (the table you're watching, with an "event"
 describing what just happened, for the page's animations), "chat" (someone at your table said something),
-"me" (balance), "notice", "error" and "fatal".
+"me" (balance), "promo" (double side bets switched on or off), "notice", "error" and "fatal".
 """
 from __future__ import annotations
 
@@ -82,6 +86,7 @@ DEALER_CARD_PAUSE = 0.95
 SETTLE_PAUSE = 4.2            # the payouts are shown before the cards are cleared
 CLOSE_PAUSE = 1.4             # "no more bets" before the cards come out
 SIDE_PAUSE = 2.6              # the side bets are paid before the first turn
+SIDE_DOUBLE_PAUSE = 1.5       # ...and this much longer when a win is paid double (the page doubles the pile)
 PRE_PAUSE = 0.7               # a hand with an action picked in advance shows its turn this long before taking it
 PRE_ACTIONS = ("hit", "stand")
 SIDE_BETS = ("pp", "t3")
@@ -91,6 +96,7 @@ SIDE_NAMES = {"perfect": "Perfect pair", "colored": "Coloured pair", "mixed": "M
               "suited_trips": "Suited trips", "straight_flush": "Straight flush", "trips": "Three of a kind",
               "straight": "Straight", "flush": "Flush"}
 BET_NAMES = {"main": "main bet", "pp": "Perfect Pairs", "t3": "21+3"}
+DOUBLE_SIDE_SETTING = "bj_double_side"   # per server (settings table): side bet wins are paid out, then doubled
 # Quick chats: only these can be said at a table (no free text, so nothing to moderate). A chat is {"id": n}, an
 # index into EMOTES + PHRASES; the pages get both lists in the welcome.
 EMOTES = ("👍", "😂", "😮", "😭", "🔥", "💰", "🍀", "🙏", "😎", "🤡")
@@ -214,6 +220,7 @@ class Table:
         self.turn: tuple[int, int] | None = None     # (seat, hand)
         self.deadline = 0.0
         self.round_no = 0
+        self.round_double = False     # this round's side bets pay double (the server's switch, as it was at the deal)
         self.log: list[str] = []
         self.result = ""
         self.event: dict = {}
@@ -328,6 +335,8 @@ class Table:
                "turn": {"seat": self.turn[0], "hand": self.turn[1]} if self.turn and self.phase == "playing" else None,
                "deadline": int(self.deadline * 1000), "you": mine[0] if mine else -1, "mine": mine, "log": self.log[-LOG_SENT:], "result": self.result,
                "event": self.event, "seq": self.seq, "bet_time": BET_TIME, "turn_time": TURN_TIME,
+               # double side bets: once the cards are out, what this round was dealt with; before, the switch
+               "double": self.round_double if self.dealer else self.room.double_side,
                "shoe": len(self.shoe), "shoe_size": DECKS * 52}
         me = self.seats[self.turn[0]] if self.turn and self.phase == "playing" else None
         if me and me.user_id == user_id:
@@ -362,7 +371,12 @@ class Table:
             spot = free[0]
         if not isinstance(spot, int) or isinstance(spot, bool) or spot not in free:
             raise Rejected("That seat is taken.")
-        self.seats[spot] = Seat(user_id, name, avatar)
+        seat = Seat(user_id, name, avatar)
+        # an extra seat starts with the bets the player's other seat last had, so Rebet covers the new seat too
+        prev = next((s for s in self.seats_of(user_id) if s.last_bet), None)
+        if prev:
+            seat.last_bet, seat.last_side = prev.last_bet, dict(prev.last_side)
+        self.seats[spot] = seat
         self.note(f"{name} takes another seat" if mine else f"{name} sat down")
         await self.room.push_me(user_id)
 
@@ -561,6 +575,7 @@ class Table:
                 s.hands[0].cards.append(self.draw())
             self.dealer = [up, self.draw()]
             self.hole_hidden = True
+            self.round_double = self.room.double_side    # switching it now changes the next round, not this one
             for _, s in players:
                 s.bet = 0
             self.note(f"— Round #{self.round_no} — dealer shows {up}")
@@ -570,9 +585,9 @@ class Table:
             cards = 2 * len(players) + 2
         await asyncio.sleep(DEAL_EACH * cards + DEAL_END)
         async with self.lock:
-            paid = await self.settle_side_bets()
-        if paid:
-            await asyncio.sleep(SIDE_PAUSE)
+            pause = await self.settle_side_bets()
+        if pause:
+            await asyncio.sleep(pause)
         async with self.lock:
             if is_blackjack(self.dealer):
                 self.turn = None
@@ -592,7 +607,8 @@ class Table:
 
     async def settle_side_bets(self) -> bool:
         """Perfect Pairs and 21+3 are decided by the first two cards and the dealer's face-up card. Wins are paid
-        with the round (one escrow per player); the page shows them now. Returns whether anyone had a side bet."""
+        with the round (one escrow per player); the page shows them now. Returns how long the page needs to show
+        them (0 when nobody had a side bet)."""
         results = []
         for i, s in self.playing():
             cards = s.hands[0].cards
@@ -605,18 +621,22 @@ class Table:
                 else:
                     hit, pays = twenty_one_plus_three(cards[:2] + self.dealer[:1]), T3_PAYS
                 mult = pays[hit] if hit else 0
-                payout = stake * (mult + 1) if hit else 0
+                # paid out as usual (stake and winnings), then doubled when this round has double side bets
+                payout = stake * (mult + 1) * (2 if self.round_double else 1) if hit else 0
                 r = {"seat": i, "bet": k, "stake": stake, "win": hit, "name": SIDE_NAMES.get(hit, ""), "mult": mult,
-                     "payout": payout}
+                     "payout": payout, "double": self.round_double}
                 s.side_results.append(r)
                 s.side_won += payout
                 results.append(r)
                 if hit:
-                    self.note(f"{s.name}: {SIDE_NAMES[hit]} on {BET_NAMES[k]}, {mult}:1 (+{payout - stake:,})")
+                    self.note(f"{s.name}: {SIDE_NAMES[hit]} on {BET_NAMES[k]}, {mult}:1"
+                              f"{', paid double' if self.round_double else ''} (+{payout - stake:,})")
             s.side_done = True
         if results:
             await self.push({"kind": "side", "results": results})
-        return bool(results)
+        if not results:
+            return 0
+        return SIDE_PAUSE + (SIDE_DOUBLE_PAUSE if any(r["win"] and r["double"] for r in results) else 0)
 
     async def advance(self) -> None:
         """The next hand to play (from the dealer's left), or the dealer's turn once every hand is done."""
@@ -908,6 +928,7 @@ class Room:
         self.tables: dict[int, Table] = {}
         self.viewers: dict[int, Viewer] = {}
         self.next_id = 1
+        self.double_side = False      # the server's double side bets switch (read when the room opens)
 
     def table_of(self, user_id: int) -> Table | None:
         return next((t for t in self.tables.values() if t.seat_of(user_id)), None)
@@ -932,7 +953,8 @@ class Room:
             seated = self.table_of(v.user_id)
             players.append({"id": str(v.user_id), "name": v.name, "avatar": v.avatar,
                             "table": seated.id if seated else None, "seated": bool(seated)})
-        return {"type": "room", "tables": [t.summary() for t in self.tables.values()], "players": players}
+        return {"type": "room", "tables": [t.summary() for t in self.tables.values()], "players": players,
+                "double_side": self.double_side}
 
     async def push_room(self) -> None:
         state = self.room_state()
@@ -1126,6 +1148,19 @@ class BlackjackHub:
                     if task:
                         task.cancel()
 
+    async def set_double_side(self, guild_id: int, on: bool) -> None:
+        """The admin panel switched double side bets on or off (it's already saved). Everyone on the blackjack page
+        sees it straight away; it pays from the next deal."""
+        room = self.rooms.get(guild_id)
+        if room is None or room.double_side == on:
+            return            # nobody has opened blackjack yet (the room reads the setting when it opens), or no change
+        room.double_side = on
+        log.info("Blackjack (Activity): double side bets %s in %s", "on" if on else "off", guild_id)
+        await asyncio.gather(*(room.to_user(uid, {"type": "promo", "double_side": on}) for uid in list(room.viewers)))
+        await room.push_room()
+        for t in list(room.tables.values()):
+            await room.push_table(t)
+
     def welcome(self, user_id: int) -> dict:
         s = self.server.settings
         return {"type": "welcome", "you": str(user_id), "min_bet": s.min_bet, "max_bet": s.max_bet,
@@ -1153,6 +1188,7 @@ class BlackjackHub:
             room = self.rooms.get(guild_id)
             if room is None:
                 room = self.rooms[guild_id] = Room(self, guild_id)
+                room.double_side = bool(await self.server.db.get_setting(guild_id, DOUBLE_SIDE_SETTING, False))
             viewer = room.viewers.get(session.user_id)
             if viewer is None:
                 viewer = room.viewers[session.user_id] = Viewer(session.user_id, member["name"],

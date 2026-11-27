@@ -92,7 +92,17 @@ function onMessage(m) {
       updateVoiceBtn();
       break;
     case 'me': balance = m.balance; showBalance(); renderForm(); renderRoom(); if (T) renderControls(T); break;
-    case 'room': room = m; renderRoom(); break;
+    case 'room': {
+      const was = !!room.double_side;
+      room = m; renderRoom();
+      if (W && was !== !!m.double_side) setupInfo();   // the paytable in the help shows the doubled payouts
+      break;
+    }
+    case 'promo':   // double side bets switched on or off in the admin panel (the room and table follow by themselves)
+      toast(m.double_side ? 'Side bets now pay double! From the next deal, every Perfect Pairs and 21+3 win is paid out, then doubled.'
+        : 'Double side bets are over: side bets pay as usual from the next deal.', true);
+      if (m.double_side) sfx.reveal();
+      break;
     case 'table': pickSeat(m); enqueue(m); break;
     case 'chat': showChat(m); break;
     case 'notice': toast(m.message, true); break;
@@ -294,6 +304,7 @@ function syncTables(host, list, cardHtml, emptyHtml) {
 }
 function renderRoom() {
   if (!W) return;
+  $('neonSign').classList.toggle('hidden', !room.double_side);
   const list = room.tables;
   syncTables($('tables'), list, (t) => {
     const live = t.phase !== 'betting';
@@ -340,6 +351,9 @@ function setupInfo() {
       <li>💬 at the top: quick chats and emotes for everyone at the table.</li>
     </ul>
     <h3>Side bets</h3>
+    ${room.double_side ? `<p class="pays-double"><span class="neon-word"><b>2× SIDE BETS</b></span> are on in this server:
+    every side bet win is paid out as usual and then doubled. 100 on a mixed pair (6:1) comes back as 1,400 instead of
+    700. It counts from the deal: a round that was dealt before it was switched on or off pays the way it was dealt.</p>` : ''}
     <p>Next to your betting circle are two small ones for side bets. Pick <b>Pairs</b> or <b>21+3</b> above the chips
     (or tap the small circle) and put chips on it. A side bet goes with a main bet and can be at most as big as it.
     Side bets are paid straight after the deal, whatever happens to your hand: the winnings are stacked on top of your
@@ -354,7 +368,8 @@ function setupInfo() {
     <p>Your bet is held safely until the round is paid: if the bot restarts mid-round, you get it back.</p>
     <p>The 🗣 button switches the dealer's voice on or off (it uses your device's own speech voices).</p>`;
 }
-const payRow = (w, bet, k, eg) => `<tr><td>${w.side_names[k]} <small>${eg}</small></td><td>${w.side_pays[bet][k]}:1</td></tr>`;
+const payRow = (w, bet, k, eg) => `<tr><td>${w.side_names[k]} <small>${eg}</small></td><td>${w.side_pays[bet][k]}:1${
+  room.double_side ? '<span class="x2">×2</span>' : ''}</td></tr>`;
 
 // ================================================================== the table
 const area = $('tableArea');
@@ -502,6 +517,14 @@ function layout(st = T) {
   svg.querySelector('.t1').style.fontSize = `${fs}px`;
   svg.querySelector('.t2').style.fontSize = `${(fs * 0.72).toFixed(1)}px`;
   G.msgY = room > fs * 3.4 ? r1 + fs * 3.1 : G.dealerBottom + room / 2;
+  // the neon "2× SIDE BETS" sign (double side bets): between the dealer's cards and the printing when it fits there,
+  // else under the discard tray
+  const nb = clamp(cw * 0.24, 9, 15), nbH = nb * 1.9;
+  const gap = r1 - fs * 1.15 - G.dealerBottom;
+  const badge = $('neonBadge');
+  badge.style.setProperty('--nb', `${nb.toFixed(1)}px`);
+  if (svg.style.display !== 'none' && gap >= nbH + 6) Object.assign(badge.style, { left: `${cx}px`, top: `${G.dealerBottom + gap / 2}px` });
+  else Object.assign(badge.style, { left: `${G.tray[0]}px`, top: `${G.tray[1] + cw * 0.9 + nbH}px` });
   Object.assign($('centerMsg').style, { left: `${cx}px`, top: `${Math.min(G.msgY, G.midTop - 6)}px` });
   // the seats
   st.seats.forEach((s, i) => placeSpot(i));
@@ -718,7 +741,7 @@ function buildTable(st) {
     const root = document.createElement('div');
     root.className = 'spot';
     root.innerHTML = `<div class="circle"></div><div class="stack"></div><div class="bet-amt hidden"></div>
-      ${SIDE.map((k) => `<div class="side-spot" data-k="${k}"><span class="lbl">${k === 'pp' ? 'PAIRS' : '21+3'}</span>
+      ${SIDE.map((k) => `<div class="side-spot" data-k="${k}"><span class="lbl">${k === 'pp' ? 'PAIRS' : '21+3'}</span><span class="x2">2×</span>
         <div class="stack"></div><span class="side-amt hidden"></span></div>`).join('')}
       <button class="sit-btn hidden">SIT</button>
       <div class="plate"><div class="ring"></div><div class="who"><div class="nm"></div><div class="st"></div></div>
@@ -855,6 +878,8 @@ function renderStatic(st, opts = {}) {
     }
     e.root.classList.toggle('target-main', i === st.you && st.phase === 'betting' && target === 'main');
   });
+  area.classList.toggle('double', !!st.double);
+  $('neonBadge').classList.toggle('hidden', !st.double);
   renderCards(st, opts);
   // the discard tray fills up as the shoe empties
   $('trayCards').style.height = `${clamp((1 - st.shoe / st.shoe_size) * 140, 0, 82)}%`;
@@ -881,7 +906,8 @@ function renderSide(st) {
   const seated = st.seats.filter(Boolean).length;
   $('tableInfo').innerHTML = `<b>${esc(st.name)}</b><br>Bets ${money(st.min_bet)} – ${money(st.max_bet)}<br>
     ${seated}/${st.max} seats · ${st.round ? `round #${st.round}` : 'no rounds yet'}
-    ${me ? '' : '<br>You are watching'}`;
+    ${me ? '' : '<br>You are watching'}
+    ${st.double ? '<span class="neon-line neon-word">2× SIDE BETS · paid double</span>' : ''}`;
   renderLog(st.log);
 }
 
@@ -1295,10 +1321,11 @@ async function animSide(prev, st, ev) {
   const wins = results.filter((r) => r.win);
   const speech = [];
   const byPlayer = new Map();   // player id -> { name, net }: one player on several seats counts once
+  const doubled = wins.some((r) => r.double);
   for (const r of wins) {
     const s = st.seats[r.seat];
     if (!s) continue;
-    speech.push(`${r.name}! ${speakName(s.name)} wins ${speakAmount(r.payout - r.stake)} on ${r.bet === 'pp' ? 'Perfect Pairs' : 'twenty-one plus three'}.`);
+    speech.push(`${r.name}${r.double ? ', paid double' : ''}! ${speakName(s.name)} wins ${speakAmount(r.payout - r.stake)} on ${r.bet === 'pp' ? 'Perfect Pairs' : 'twenty-one plus three'}.`);
     const p = byPlayer.get(s.id) || { name: s.name, net: 0 };
     p.net += r.payout - r.stake;
     byPlayer.set(s.id, p);
@@ -1307,19 +1334,21 @@ async function animSide(prev, st, ev) {
   if (speech.length >= SUMMARY_WINNERS) {
     const ps = [...byPlayer.values()];
     const total = speakAmount(ps.reduce((a, p) => a + p.net, 0));
-    say(ps.length === 1 ? `${speakName(ps[0].name)} wins ${total} on the side bets.`
-      : `${countPlayers(ps.length)} win ${total} on the side bets.`);
+    const on = doubled ? 'on the side bets, paid double' : 'on the side bets';
+    say(ps.length === 1 ? `${speakName(ps[0].name)} wins ${total} ${on}.`
+      : `${countPlayers(ps.length)} win ${total} ${on}.`);
   } else if (speech.length) say(speech.join(' '));
   // the tags over the side circles: what it was, and what it paid
   for (const r of results) {
     if (!spotEls[r.seat]) continue;
     const [x, y] = sideOf(r.seat, r.bet);
     const f = document.createElement('div');
-    f.className = `side-tag ${r.win ? 'win' : 'lose'}`;
-    f.innerHTML = r.win ? `${esc(r.name)}<b>${r.mult}:1</b>` : 'No win';
+    f.className = `side-tag ${r.win ? 'win' : 'lose'}${r.win && r.double ? ' double' : ''}`;
+    // a doubled win gets a neon ×2 stamped on its tag a moment later
+    f.innerHTML = r.win ? `${esc(r.name)}<b>${r.mult}:1</b>${r.double ? '<span class="x2">×2</span>' : ''}` : 'No win';
     f.style.left = `${x}px`; f.style.top = `${y - G.R * 0.9}px`;
     area.appendChild(f);
-    setTimeout(() => f.remove(), 2600);
+    setTimeout(() => f.remove(), r.win && r.double ? 3800 : 2600);
   }
   const mine = wins.filter((r) => isMine(st, r.seat));
   if (mine.length) {
@@ -1338,14 +1367,43 @@ async function animSide(prev, st, ev) {
   }
   if (flights.length) { sfx.sweep(); await Promise.all(flights); pulseRack(); }
   if (!wins.length) return;
-  // the winnings come out of the rack and are stacked on top of the side bet; they stay there until the round is paid
-  flights = wins.filter((r) => spotEls[r.seat]).map((r) =>
-    flyEl(chipPile(r.payout - r.stake, 5), G.rack, sideOf(r.seat, r.bet), 560, { arc: 20 })
-      .then(() => { setSideStack(r.seat, r.bet, [r.stake, r.payout - r.stake]); float(r.seat, `+${tableNum(r.payout - r.stake)}`); }));
+  // the winnings come out of the rack and are stacked on top of the side bet; they stay there until the round is paid.
+  // A doubled win first gets its usual winnings (stake and winnings is half of what it pays) ...
+  const shown = wins.filter((r) => spotEls[r.seat]);
+  const firstWin = (r) => (r.double ? r.payout / 2 - r.stake : r.payout - r.stake);
+  flights = shown.map((r) =>
+    flyEl(chipPile(firstWin(r), 5), G.rack, sideOf(r.seat, r.bet), 560, { arc: 20 })
+      .then(() => { setSideStack(r.seat, r.bet, [r.stake, firstWin(r)]); float(r.seat, `+${tableNum(firstWin(r))}`); }));
   sfx.chips(8);
   await Promise.all(flights);
+  const dbl = shown.filter((r) => r.double);
+  if (dbl.length) await doublePayout(st, dbl, mine.some((r) => r.double));
   if (mine.length) sfx.win(true);
   await sleep(350);
+}
+// ... then the whole payout is doubled: a neon ×2 bursts on the side circle and a second pile, as big as stake and
+// winnings together, comes out of the rack and onto it
+async function doublePayout(st, wins, mine) {
+  await sleep(250);
+  for (const r of wins) {
+    const [x, y] = sideOf(r.seat, r.bet);
+    const b = document.createElement('div');
+    b.className = 'dbl-burst';
+    b.innerHTML = '<b>×2</b>';
+    b.style.left = `${x}px`; b.style.top = `${y}px`;
+    b.style.setProperty('--d', `${Math.round(G.R * 2.6)}px`);
+    area.appendChild(b);
+    setTimeout(() => b.remove(), 950);
+  }
+  if (mine) banner('DOUBLE PAYOUT!', 'neon');
+  sfx.blackjack();
+  await sleep(380);
+  const flights = wins.map((r) =>
+    flyEl(chipPile(r.payout / 2, 5), G.rack, sideOf(r.seat, r.bet), 620, { arc: 46, s0: 1.25 })
+      .then(() => { setSideStack(r.seat, r.bet, [r.stake, r.payout - r.stake]); float(r.seat, `×2 +${tableNum(r.payout - r.stake)}`, 'double'); }));
+  sfx.chips(12);
+  if (mine) wins.filter((r) => isMine(st, r.seat)).forEach((r) => coinShower(r.seat, 10));
+  await Promise.all(flights);
 }
 async function animShuffle() {
   const shoe = $('shoe');

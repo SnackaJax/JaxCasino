@@ -28,6 +28,8 @@ Routes
   POST /api/players/{id}/crux/remove {guild}: ends the player's /crux (break from the casino) early
   GET  /api/edits?guild=             the latest balance edits made in the panel
   GET  /api/activity?guild=&before=&after=   games and other credit movements, newest first
+  GET  /api/settings?guild=          the server's game switches (GAME_SETTINGS), e.g. {"bj_double_side": false}
+  POST /api/settings                 {guild, key, value}: changes one of them; the games pick it up straight away
   everything else                    the page (admin_panel/static)
 """
 from __future__ import annotations
@@ -61,6 +63,9 @@ DISCORD_CALLBACK = "/api/auth/discord"
 SESSION_DAYS = 30
 MAX_AMOUNT = 10**15
 MAX_NOTE = 200
+# Game switches per server, saved in the settings table (database.get_setting). Each: (default, label for the log).
+# bj_double_side: blackjack in the Activity pays side bet wins out, then doubles them (activity/blackjack.py).
+GAME_SETTINGS: dict[str, tuple[Any, str]] = {"bj_double_side": (False, "Blackjack double side bets")}
 LOGIN_FAILS = 5            # wrong passwords allowed per LOGIN_WINDOW before logins pause
 LOGIN_WINDOW = 60
 
@@ -72,6 +77,7 @@ class Directory(Protocol):
     async def crux_started(self, guild_id: int, user_id: int, until: float) -> None: ...  # closes their games
     def client_id(self) -> int | None: ...                             # the bot's application id (Discord sign-in)
     async def owner_ids(self) -> set[int]: ...                         # the bot's owner and team (Discord sign-in)
+    async def setting_changed(self, guild_id: int, key: str, value: Any) -> None: ...  # tells the running games
 
 
 
@@ -477,6 +483,39 @@ class AdminPanel:
         return web.json_response({"rows": rows, "people": names})
 
 
+    # ------------------------------------------------------------ game settings
+    async def settings(self, request: web.Request) -> web.Response:
+        gid = self.guild_arg(request)
+        return web.json_response({k: await self.db.get_setting(gid, k, default)
+                                  for k, (default, _) in GAME_SETTINGS.items()})
+
+    async def change_setting(self, request: web.Request) -> web.Response:
+        try:
+            body = await request.json()
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            raise web.HTTPBadRequest(text="bad JSON")
+        if not isinstance(body, dict):
+            raise web.HTTPBadRequest(text="bad request")
+        gid = str(body.get("guild", ""))
+        if not gid.isdigit():
+            raise web.HTTPBadRequest(text="guild is missing")
+        key = body.get("key")
+        if key not in GAME_SETTINGS:
+            raise web.HTTPBadRequest(text="no such setting")
+        default, label = GAME_SETTINGS[key]
+        value = body.get("value")
+        if type(value) is not type(default):
+            raise web.HTTPBadRequest(text="wrong kind of value")
+        await self.db.set_setting(int(gid), key, value)
+        log.info("Admin panel: %s set to %r in %s", label, value, gid)
+        changed = getattr(self.directory, "setting_changed", None)
+        if changed is not None:
+            try:
+                await changed(int(gid), key, value)
+            except Exception:
+                log.exception("Couldn't pass %s on to the running games", key)
+        return web.json_response({"key": key, "value": value})
+
     # ------------------------------------------------------------ page
     async def page(self, request: web.Request) -> web.StreamResponse:
         rel = request.match_info.get("tail", "")
@@ -518,6 +557,8 @@ class AdminPanel:
         r.add_post("/api/players/{user_id}/crux/remove", self.remove_crux)
         r.add_get("/api/edits", self.edits)
         r.add_get("/api/activity", self.activity)
+        r.add_get("/api/settings", self.settings)
+        r.add_post("/api/settings", self.change_setting)
         r.add_route("*", "/api/{tail:.*}", self._api_404)
         r.add_get("/{tail:.*}", self.page)
         return app

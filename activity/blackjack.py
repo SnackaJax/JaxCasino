@@ -2,8 +2,8 @@
 
 The rules are the same as /blackjack in chat (cogs/blackjack.py): a 6-deck shoe, the dealer stands on all 17s,
 blackjack pays 3:2, double on any two cards, split pairs up to 4 hands (split aces get one card each), and the
-dealer's face-up card comes from the same shoe rule (cogs.blackjack.draw_upcard). The chat game stays as it is;
-this is a second way to play.
+dealer's face-up card comes from the same shoe rule (cogs.blackjack.draw_upcard). The chat game deals every player
+from a shoe of their own that's dealt down to RESHUFFLE_AT like a table's, so both ways of playing have the same odds.
 
 Two side bets, each at most the player's main bet, settled right after the deal:
   Perfect Pairs (the player's first two cards): perfect pair 25:1, coloured pair 12:1, mixed pair 6:1

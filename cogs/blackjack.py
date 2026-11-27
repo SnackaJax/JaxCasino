@@ -1,4 +1,9 @@
-"""Blackjack: 6-deck shoe, dealer stands on all 17s, blackjack pays 3:2, double and split (up to 4 hands)."""
+"""Blackjack: 6-deck shoe, dealer stands on all 17s, blackjack pays 3:2, double and split (up to 4 hands).
+
+Every player has their own shoe on each server, dealt down to a quarter before it's shuffled again, the same way a
+table's shoe is dealt in the Activity (activity/blackjack.py). That keeps both ways of playing on the same odds: a
+fresh shoe for every hand would leave the house a little more, because the dealer's face-up card rule (below) leaves
+the 10-value cards it skips in the shoe for the cards after it."""
 import asyncio
 import math
 
@@ -13,10 +18,12 @@ from utils.rng import rng
 from utils.views import OwnedView
 
 MAX_HANDS = 4
+DECKS = 6
+RESHUFFLE_AT = 0.25   # a fresh shoe once fewer than this share of its cards are left (the Activity's tables too)
 # Chance that the dealer's face-up card is a 10-value card (10, J, Q, K). A fair shoe gives 4/13 ≈ 30.8%;
 # this is lowered on purpose so the dealer starts strong less often. The hole card and every later card
 # are dealt normally from the shoe.
-DEALER_TEN_CHANCE = 0.10
+DEALER_TEN_CHANCE = 0.20
 
 
 LOSE = "Lose ❌"
@@ -48,6 +55,20 @@ def draw_upcard(shoe: list[Card]) -> Card:
     return shoe.pop(rng.choice(pool))
 
 
+# (server, player) -> that player's shoe. Kept in memory: after a restart everyone starts on a fresh shoe.
+SHOES: dict[tuple[int, int], list[Card]] = {}
+
+
+def player_shoe(guild_id: int, user_id: int) -> tuple[list[Card], bool]:
+    """The player's shoe for their next hand, and whether it was just shuffled."""
+    key = (guild_id or 0, user_id)
+    shoe = SHOES.get(key)
+    if shoe is None or len(shoe) < int(DECKS * 52 * RESHUFFLE_AT):
+        SHOES[key] = shoe = new_deck(DECKS)
+        return shoe, True
+    return shoe, False
+
+
 def is_blackjack(cards: list[Card]) -> bool:
     return len(cards) == 2 and hand_value(cards)[0] == 21
 
@@ -77,13 +98,22 @@ class BlackjackView(OwnedView):
         self.wager = wager
         self.user = user
         self.bet = wager.stake  # the original bet, before any double or split; what "Deal again" repeats
-        self.shoe = new_deck(6)
-        self.dealer: list[Card] = [draw_upcard(self.shoe), self.shoe.pop()]
-        self.hands = [Hand([self.shoe.pop(), self.shoe.pop()], wager.stake)]
+        self.shoe, self.shuffled = player_shoe(wager.guild_id, user.id)
+        # dealt in the Activity's order: the player's first card, the dealer's face-up card, the player's second
+        # card, the dealer's hole card
+        first = self.draw()
+        up = draw_upcard(self.shoe) if self.shoe else self.draw()
+        self.hands = [Hand([first, self.draw()], wager.stake)]
+        self.dealer: list[Card] = [up, self.draw()]
         self.current = 0
         self.finished = False
         self.lock = asyncio.Lock()
         self.summary = ""
+
+    def draw(self) -> Card:
+        if not self.shoe:   # (only with several hands going at once on one shoe) the same list, refilled
+            self.shoe.extend(new_deck(DECKS))
+        return self.shoe.pop()
 
     # ------------------------------------------------------------- state
     @property
@@ -135,7 +165,8 @@ class BlackjackView(OwnedView):
                 summary = f"**That's 21 for the dealer, thanks for playing**\n{summary}"
             embed.add_field(name="Result", value=summary, inline=False)
         else:
-            embed.set_footer(text="Dealer stands on all 17s · Blackjack pays 3:2")
+            embed.set_footer(text=("The dealer shuffles a fresh shoe · " if self.shuffled else "")
+                             + "Dealer stands on all 17s · Blackjack pays 3:2")
         return embed
 
     # ------------------------------------------------------------ flow
@@ -154,7 +185,7 @@ class BlackjackView(OwnedView):
         self.stop()
         if any(h.value <= 21 for h in self.hands):
             while hand_value(self.dealer)[0] < 17:
-                self.dealer.append(self.shoe.pop())
+                self.dealer.append(self.draw())
         dealer_total = hand_value(self.dealer)[0]
         for h in self.hands:
             if h.value > 21:
@@ -202,7 +233,7 @@ class BlackjackView(OwnedView):
         async with self.lock:
             if self.finished:
                 return await interaction.response.defer()
-            self.hand.cards.append(self.shoe.pop())
+            self.hand.cards.append(self.draw())
             if self.hand.value >= 21:
                 self.hand.done = True
                 await self.advance()
@@ -227,7 +258,7 @@ class BlackjackView(OwnedView):
                     f"You need another {fmt(self.hand.stake)} to double.", ephemeral=True)
             self.hand.stake *= 2
             self.hand.doubled = True
-            self.hand.cards.append(self.shoe.pop())
+            self.hand.cards.append(self.draw())
             self.hand.done = True
             await self.advance()
             await self.update(interaction)
@@ -242,8 +273,8 @@ class BlackjackView(OwnedView):
                     f"You need another {fmt(self.hand.stake)} to split.", ephemeral=True)
             h = self.hand
             second = h.cards.pop()
-            new = Hand([second, self.shoe.pop()], h.stake, from_split=True)
-            h.cards.append(self.shoe.pop())
+            new = Hand([second, self.draw()], h.stake, from_split=True)
+            h.cards.append(self.draw())
             h.from_split = True
             self.hands.insert(self.current + 1, new)
             if second.rank == 14:  # split aces get one card each

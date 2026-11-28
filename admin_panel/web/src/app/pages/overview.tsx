@@ -4,7 +4,7 @@ import { ArrowClockwiseIcon } from "@phosphor-icons/react"
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, ReferenceArea, XAxis, YAxis } from "recharts"
 
 import { api, type BalanceWindow, type Guild, type Overview, type Period, type Player } from "@/app/api"
-import { useDragZoom } from "@/app/drag-zoom"
+import { useDragZoom, ZOOM_HINT } from "@/app/drag-zoom"
 import { EditBalanceDialog, type EditTarget } from "@/app/edit-balance"
 import { ago, compact, credits, displayName, gameColor, gameName, moneyName, pct, signed } from "@/app/format"
 import { MoneyPie } from "@/app/money-pie"
@@ -90,7 +90,7 @@ export function OverviewPage({ guild }: { guild: Guild }) {
         <Card>
           <CardHeader>
             <CardTitle>Credits in circulation</CardTitle>
-            <CardDescription>Everything players hold, over the period. Drag across the chart to zoom in.</CardDescription>
+            <CardDescription>Everything players hold, over the period. {ZOOM_HINT}</CardDescription>
           </CardHeader>
           <CardContent>
             {o ? (
@@ -209,7 +209,7 @@ function Kpi({
             {value}
           </span>
         )}
-        <span className="text-muted-foreground truncate text-[11px]">{hint ?? " "}</span>
+        <span className="text-muted-foreground line-clamp-2 text-[11px] sm:line-clamp-1">{hint ?? " "}</span>
       </CardContent>
     </Card>
   )
@@ -288,7 +288,7 @@ function CirculationChart({ guildId, points }: { guildId: string; points: [numbe
         <span>
           {zoom
             ? `${new Date(zoom.from * 1000).toLocaleString()} – ${new Date(zoom.to * 1000).toLocaleString()} · double-click to go back`
-            : "Drag across the chart to zoom in."}
+            : ZOOM_HINT}
         </span>
         {zoom ? (
           <Button variant="ghost" size="xs" onClick={() => setZoom(null)}>

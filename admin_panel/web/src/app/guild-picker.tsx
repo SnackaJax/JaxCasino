@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 
-function GuildIcon({ guild, size = 36 }: { guild: Guild | null; size?: number }) {
+export function GuildIcon({ guild, size = 36 }: { guild: Guild | null; size?: number }) {
   if (guild?.icon) {
     return <img src={guild.icon} alt="" width={size} height={size} className="rounded-md" />
   }

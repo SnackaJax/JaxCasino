@@ -16,6 +16,7 @@ import { DataTableToolbar } from "@/components/data-table/data-table-toolbar"; /
 import type { DataTableFilterField } from "@/components/data-table/types";
 import { Button } from "@/components/ui/button";
 import { useHotKey } from "@/hooks/use-hot-key";
+import { useMediaQuery } from "@/hooks/use-media-query";
 import { useLocalStorage } from "@/hooks/use-local-storage";
 import {
   getColumnOrderKey,
@@ -123,6 +124,11 @@ export interface DataTableInfiniteProps<TData extends RowData> {
   footerSlot?: React.ReactNode;
   floatingBarSlot?: React.ReactNode;
   className?: string;
+  /**
+   * On a phone (narrower than 768px) the rows are drawn as cards with this instead of as a table; tapping a card
+   * opens it like clicking a row. A "sort by" picker stands in for the column headers.
+   */
+  renderCard?: (row: Row<DataTableFeatures, TData>) => React.ReactNode;
 }
 
 export function DataTableInfinite<TData extends RowData>({
@@ -154,7 +160,10 @@ export function DataTableInfinite<TData extends RowData>({
   footerSlot,
   floatingBarSlot,
   className,
+  renderCard,
 }: DataTableInfiniteProps<TData>) {
+  const phone = useMediaQuery("(max-width: 767px)");
+  const cards = !!renderCard && phone;
   const [columnFilters, setColumnFilters] =
     React.useState<ColumnFiltersState>(defaultColumnFilters);
   const [sorting, setSorting] =
@@ -370,7 +379,7 @@ export function DataTableInfinite<TData extends RowData>({
       */}
       <div
         className={cn(
-          "flex h-screen w-full flex-col sm:flex-row",
+          "flex h-full w-full flex-col sm:flex-row",
           // Single source of truth for the panel width: the panel, its inner
           // wrapper and the main pane's `max-width` all read this variable so
           // they animate in lockstep.
@@ -429,6 +438,17 @@ export function DataTableInfinite<TData extends RowData>({
             {chartSlot}
           </div>
           {/* `min-h-0` lets the flex item shrink so the table container scrolls instead of the page. */}
+          {cards ? (
+            <CardList
+              table={table}
+              renderCard={renderCard!}
+              onRowClick={onRowClick}
+              onScroll={onScroll}
+              more={hasMoreToLoad}
+              busy={!!(isFetching || isLoading)}
+              fetchNextPage={() => fetchNextPage()}
+            />
+          ) : (
           <div className="z-0 min-h-0 flex-1">
             <Table
               ref={tableRef}
@@ -560,11 +580,106 @@ export function DataTableInfinite<TData extends RowData>({
               </TableBody>
             </Table>
           </div>
+          )}
         </div>
       </div>
       {sheetSlot}
       {floatingBarSlot}
     </DataTableProvider>
+  );
+}
+
+/** The phone version of the table body: a sort picker and one card per row. */
+function CardList<TData extends RowData>({
+  table,
+  renderCard,
+  onRowClick,
+  onScroll,
+  more,
+  busy,
+  fetchNextPage,
+}: {
+  table: ReturnType<typeof useTable<DataTableFeatures, TData>>;
+  renderCard: (row: Row<DataTableFeatures, TData>) => React.ReactNode;
+  onRowClick: (row: Row<DataTableFeatures, TData>, isDetail: boolean) => void;
+  onScroll: (e: React.UIEvent<HTMLElement>) => void;
+  more: boolean;
+  busy: boolean;
+  fetchNextPage: () => void;
+}) {
+  const rows = table.getRowModel().rows;
+  const sortable = table.getAllLeafColumns().filter((c) => c.getCanSort());
+  const sort = table.state.sorting[0];
+  const label = (id: string) => {
+    const c = sortable.find((x) => x.id === id);
+    const meta = c?.columnDef.meta as { label?: string } | undefined;
+    return meta?.label ?? id;
+  };
+  return (
+    <div className="z-0 flex min-h-0 flex-1 flex-col">
+      {sortable.length ? (
+        <div className="flex shrink-0 items-center gap-2 px-2 pb-2 text-xs">
+          <label htmlFor="card-sort" className="text-muted-foreground">
+            Sort by
+          </label>
+          <select
+            id="card-sort"
+            className="border-input bg-background h-9 min-w-0 flex-1 rounded-md border px-2"
+            value={sort?.id ?? ""}
+            onChange={(e) =>
+              table.setSorting(e.target.value ? [{ id: e.target.value, desc: sort?.desc ?? true }] : [])
+            }
+          >
+            {!sort ? <option value="">Default</option> : null}
+            {sortable.map((c) => (
+              <option key={c.id} value={c.id}>
+                {label(c.id)}
+              </option>
+            ))}
+          </select>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-9"
+            disabled={!sort}
+            onClick={() => sort && table.setSorting([{ id: sort.id, desc: !sort.desc }])}
+          >
+            {sort?.desc === false ? "Low → high" : "High → low"}
+          </Button>
+        </div>
+      ) : null}
+      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3" onScroll={onScroll}>
+        <ul className="flex flex-col gap-2">
+          {rows.map((row) => (
+            <li key={row.id}>
+              <button
+                type="button"
+                id={row.id}
+                onClick={() => onRowClick(row, row.getIsSelected())}
+                className={cn(
+                  "bg-card active:bg-muted w-full rounded-lg border p-3 text-left transition-colors",
+                  row.getIsSelected() && "border-primary",
+                )}
+              >
+                {renderCard(row)}
+              </button>
+            </li>
+          ))}
+        </ul>
+        <div className="py-3 text-center">
+          {more || busy ? (
+            <Button disabled={busy} onClick={fetchNextPage} variant="outline">
+              {busy ? <LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Load more
+            </Button>
+          ) : (
+            <p className="text-muted-foreground text-xs">
+              {rows.length ? `All ${formatCompactNumber(rows.length)} shown` : "No results."}
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 

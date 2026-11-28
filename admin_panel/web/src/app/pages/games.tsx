@@ -123,7 +123,7 @@ function GameCard({ g, bucket, people }: { g: GameStats; bucket: "hour" | "day";
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
           <Stat
             label="Payback"
             value={share(payback, 1)}
@@ -227,7 +227,7 @@ function Stat({ label, value, hint, tone, title }: { label: string; value: strin
     <div className="bg-muted/40 min-w-0 rounded-md border px-2.5 py-2" title={title}>
       <div className="text-muted-foreground truncate text-[11px]">{label}</div>
       <div className={cn("tabular truncate text-sm font-medium", tone === "good" && "text-success", tone === "bad" && "text-error")}>{value}</div>
-      {hint ? <div className="text-muted-foreground truncate text-[10px]">{hint}</div> : null}
+      {hint ? <div className="text-muted-foreground line-clamp-2 text-[10px] sm:line-clamp-1">{hint}</div> : null}
     </div>
   )
 }

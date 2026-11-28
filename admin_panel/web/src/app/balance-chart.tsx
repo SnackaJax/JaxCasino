@@ -3,7 +3,7 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query"
 import { Area, AreaChart, CartesianGrid, ReferenceArea, XAxis, YAxis } from "recharts"
 
 import { api, type BalanceWindow } from "@/app/api"
-import { useDragZoom } from "@/app/drag-zoom"
+import { useDragZoom, ZOOM_HINT } from "@/app/drag-zoom"
 import { compact, credits } from "@/app/format"
 import { Button } from "@/components/ui/button"
 import { ChartContainer, ChartTooltip, type ChartConfig } from "@/components/ui/chart"
@@ -164,7 +164,7 @@ export function BalanceChart({ guildId, playerId }: { guildId: string; playerId:
           <p className="text-muted-foreground mt-1 text-[11px]">
             {zoom
               ? `${new Date(zoom.from * 1000).toLocaleString()} – ${new Date(zoom.to * 1000).toLocaleString()} · double-click to go back`
-              : "Drag across the chart to zoom in."}
+              : ZOOM_HINT}
           </p>
         </div>
       ) : (

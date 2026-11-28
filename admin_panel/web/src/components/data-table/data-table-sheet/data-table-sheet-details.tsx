@@ -135,7 +135,7 @@ export function DataTableSheetDetails({
     >
       <SheetContent
         // onCloseAutoFocus={(e) => e.preventDefault()}
-        className="overflow-y-auto p-0 sm:max-w-md lg:max-w-xl 2xl:max-w-2xl"
+        className="w-full overflow-y-auto p-0 pb-[env(safe-area-inset-bottom)] sm:w-3/4 sm:max-w-md lg:max-w-xl 2xl:max-w-2xl"
         hideClose
       >
         <SheetHeader className="bg-background sticky top-0 z-10 border-b p-4">
@@ -154,7 +154,7 @@ export function DataTableSheetDetails({
                     <Button
                       size="icon"
                       variant="ghost"
-                      className="h-7 w-7"
+                      className="h-9 w-9 sm:h-7 sm:w-7"
                       disabled={!prevId}
                       onClick={onPrev}
                     >
@@ -175,7 +175,7 @@ export function DataTableSheetDetails({
                     <Button
                       size="icon"
                       variant="ghost"
-                      className="h-7 w-7"
+                      className="h-9 w-9 sm:h-7 sm:w-7"
                       disabled={!nextId}
                       onClick={onNext}
                     >
@@ -192,7 +192,7 @@ export function DataTableSheetDetails({
               </TooltipProvider>
               <Separator orientation="vertical" className="mx-1" />
               <SheetClose autoFocus={true} asChild>
-                <Button size="icon" variant="ghost" className="h-7 w-7">
+                <Button size="icon" variant="ghost" className="h-9 w-9 sm:h-7 sm:w-7">
                   <X className="h-5 w-5" />
                   <span className="sr-only">Close</span>
                 </Button>

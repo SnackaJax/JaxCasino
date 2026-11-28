@@ -25,7 +25,7 @@ function signinError(): string | null {
   return SIGNIN_ERRORS[reason] ?? SIGNIN_ERRORS.failed
 }
 
-export function Login({ discord }: { discord: boolean }) {
+export function Login({ discord, password: passwordWorks = true }: { discord: boolean; password?: boolean }) {
   const qc = useQueryClient()
   const [password, setPassword] = React.useState("")
   const [error, setError] = React.useState<string | null>(null)
@@ -54,9 +54,11 @@ export function Login({ discord }: { discord: boolean }) {
           </div>
           <CardTitle>JaxCasino admin</CardTitle>
           <CardDescription>
-            {discord
-              ? "Sign in with the bot owner's Discord account, or with the admin panel password."
-              : "Enter the admin panel password (ADMIN_PANEL_PASSWORD in the bot's .env)."}
+            {!passwordWorks
+              ? "Sign in with the bot owner's Discord account. The password only works at home."
+              : discord
+                ? "Sign in with the bot owner's Discord account, or with the admin panel password."
+                : "Enter the admin panel password (ADMIN_PANEL_PASSWORD in the bot's .env)."}
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
@@ -68,13 +70,16 @@ export function Login({ discord }: { discord: boolean }) {
                 </a>
               </Button>
               {discordError ? <p className="text-destructive text-xs">{discordError}</p> : null}
+              {passwordWorks ? (
               <div className="text-muted-foreground flex items-center gap-3 text-[11px]">
                 <span className="bg-border h-px flex-1" />
                 or with the password
                 <span className="bg-border h-px flex-1" />
               </div>
+              ) : null}
             </>
           ) : null}
+          {passwordWorks ? (
           <form onSubmit={submit} className="flex flex-col gap-4">
             <div className="flex flex-col gap-2">
               <Label htmlFor="password">Password</Label>
@@ -83,6 +88,7 @@ export function Login({ discord }: { discord: boolean }) {
                 type="password"
                 autoComplete="current-password"
                 autoFocus={!discord}
+                enterKeyHint="go"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 aria-invalid={error ? true : undefined}
@@ -93,6 +99,12 @@ export function Login({ discord }: { discord: boolean }) {
               {busy ? "Signing in…" : "Sign in"}
             </Button>
           </form>
+          ) : !discord ? (
+            <p className="text-destructive text-xs">
+              The password doesn't work from here and Discord sign-in isn't set up, so the panel can only be opened
+              at home.
+            </p>
+          ) : null}
         </CardContent>
       </Card>
     </main>

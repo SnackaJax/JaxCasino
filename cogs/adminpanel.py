@@ -1,5 +1,6 @@
 """Starts the admin panel (admin_panel/server.py) with the bot when ADMIN_PANEL_ENABLED=1."""
 import logging
+from pathlib import Path
 
 from discord.ext import commands
 
@@ -72,7 +73,9 @@ class AdminPanelCog(commands.Cog):
             return
         self.panel = AdminPanel(self.bot.db, config.ADMIN_PANEL_PASSWORD, BotDirectory(self.bot),
                                 discord_secret=config.DISCORD_CLIENT_SECRET,
-                                discord_users=frozenset(config.ADMIN_PANEL_USERS))
+                                discord_users=frozenset(config.ADMIN_PANEL_USERS),
+                                password_login=config.ADMIN_PANEL_PASSWORD_LOGIN,
+                                state_path=Path(config.ADMIN_PANEL_STATE))
         try:
             await self.panel.start(config.ADMIN_PANEL_HOST, config.ADMIN_PANEL_PORT)
         except OSError as e:

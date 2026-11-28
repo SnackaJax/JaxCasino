@@ -159,6 +159,33 @@ const filterFields = generateFilterFields<Row>(tableSchema.definition)
 const defaultColumnVisibility = getDefaultColumnVisibility(tableSchema.definition)
 const columns: ColumnDef<DataTableFeatures, Row>[] = resizable(generateColumns<Row>(tableSchema.definition), ["result"])
 
+/** One credit movement on a phone. */
+function ActivityCard({ row }: { row: Row }) {
+  return (
+    <div className="flex items-center gap-3">
+      <Dot result={row.result} />
+      <PlayerAvatar name={row.player} avatar={row.avatar} size={28} />
+      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className="truncate text-sm">
+          {row.player}
+          {row.to ? <span className="text-muted-foreground"> → {row.to}</span> : null}
+        </span>
+        <span className="text-muted-foreground truncate text-[11px]">
+          {row.what} · {dateTime(row.ts)}
+        </span>
+      </span>
+      <span className="flex shrink-0 flex-col items-end gap-0.5">
+        <span className={cn("tabular text-sm font-medium", row.change > 0 && "text-success", row.change < 0 && "text-error")}>
+          {signed(row.change)}
+        </span>
+        {row.bet ? <span className="text-muted-foreground tabular text-[11px]">bet {credits(row.bet)}</span> : null}
+      </span>
+    </div>
+  )
+}
+
+const renderActivityCard = (row: { original: Row }) => <ActivityCard row={row.original} />
+
 function toRow(r: ActivityRow, people: Record<string, Person>): Row {
   const who = r.user_id ? (people[r.user_id] ?? { name: null, avatar: null, in_server: false }) : null
   const result: Result =
@@ -294,6 +321,7 @@ function ActivityTable({ guild }: { guild: Guild }) {
       getRowClassName={getRowClassName}
       renderLiveRow={renderLiveRow as never}
       tableId="activity"
+      renderCard={renderActivityCard}
       commandSlot={<DataTableFilterCommand schema={filterSchema.definition} tableId="activity" />}
       chartSlot={<ActivityChart />}
       toolbarActions={

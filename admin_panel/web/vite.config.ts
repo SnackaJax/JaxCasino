@@ -20,6 +20,7 @@ export default defineConfig({
   },
   server: {
     port: 5180,
-    proxy: { "/api": "http://127.0.0.1:8781" },
+    // xfwd: the dev server sees the address you opened (and counts it as "away", like Tailscale would)
+    proxy: { "/api": { target: "http://127.0.0.1:8781", xfwd: true } },
   },
 })

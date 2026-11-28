@@ -12,6 +12,10 @@ config.json
 *.sqlite
 *.sqlite3
 
+# The admin panel's sign-in history
+admin_panel_state.json
+admin_panel_state.tmp
+
 # Logs and Python leftovers
 logs/
 *.log

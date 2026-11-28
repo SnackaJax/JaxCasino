@@ -129,8 +129,8 @@ SPIN_FRENZY_MAX_WIN = max(0, _int("SPIN_FRENZY_MAX_WIN", 10000))
 DATABASE_PATH = os.getenv("DATABASE_PATH", "gamble.db").strip() or "gamble.db"
 
 # Admin panel: a website for the bot's owner (stats, every player's balance, editing balances) served by the bot on
-# ADMIN_PANEL_HOST:ADMIN_PANEL_PORT. Off until ADMIN_PANEL_ENABLED=1, and it won't start without a password. Keep it
-# on this machine: never point a tunnel or reverse proxy at it.
+# ADMIN_PANEL_HOST:ADMIN_PANEL_PORT. Off until ADMIN_PANEL_ENABLED=1, and it won't start without a password. From
+# outside your home network, reach it only through a private network such as Tailscale; never a public tunnel.
 ADMIN_PANEL_ENABLED = os.getenv("ADMIN_PANEL_ENABLED", "0").strip().lower() in ("1", "true", "yes", "on")
 ADMIN_PANEL_HOST = os.getenv("ADMIN_PANEL_HOST", "127.0.0.1").strip() or "127.0.0.1"
 ADMIN_PANEL_PORT = _int("ADMIN_PANEL_PORT", 8780)
@@ -138,6 +138,11 @@ ADMIN_PANEL_PASSWORD = os.getenv("ADMIN_PANEL_PASSWORD", "").strip()
 # Besides the password, the bot's owner (and the members of its Developer Portal team) can sign in with Discord.
 # ADMIN_PANEL_USERS lets more people in that way: Discord user IDs, separated by commas.
 ADMIN_PANEL_USERS = _int_list("ADMIN_PANEL_USERS")
+# Where the password works: on (everywhere), local (only at home; away, through Tailscale say, only Discord sign-in)
+# or off (only Discord sign-in). The password still signs the sessions, so it stays required.
+ADMIN_PANEL_PASSWORD_LOGIN = os.getenv("ADMIN_PANEL_PASSWORD_LOGIN", "on").strip().lower() or "on"
+# The panel's sign-in history and "sign out everywhere" state.
+ADMIN_PANEL_STATE = os.getenv("ADMIN_PANEL_STATE", "admin_panel_state.json").strip() or "admin_panel_state.json"
 
 CURRENCY = "credits"
 COIN = "🪙"

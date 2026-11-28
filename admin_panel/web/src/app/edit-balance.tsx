@@ -148,6 +148,21 @@ export function EditBalanceDialog({
               aria-invalid={raw && amount === null ? true : undefined}
               className="tabular"
             />
+            {/* a phone's number keyboard has no letters: thousands, millions and billions as keys */}
+            <div className="hidden gap-2 pointer-coarse:flex">
+              {(["k", "m", "b"] as const).map((suffix) => (
+                <Button
+                  key={suffix}
+                  type="button"
+                  variant="outline"
+                  className="h-10 flex-1"
+                  disabled={!raw || /[a-z]$/i.test(raw)}
+                  onClick={() => setRaw((r) => r.trim() + suffix)}
+                >
+                  {suffix === "k" ? "K · thousand" : suffix === "m" ? "M · million" : "B · billion"}
+                </Button>
+              ))}
+            </div>
             {raw && amount === null ? (
               <p className="text-destructive text-xs">Enter a whole number, like 5000, 2.5k or 1m.</p>
             ) : null}

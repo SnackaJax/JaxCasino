@@ -16,7 +16,7 @@ export default function App() {
   React.useEffect(() => {
     const signedOut = () => {
       // keep the Discord flag, so the sign-in page still offers the Discord button
-      qc.setQueryData<Session>(["session"], (old) => ({ authenticated: false, discord: old?.discord }))
+      qc.setQueryData<Session>(["session"], (old) => ({ ...old, authenticated: false }))
     }
     window.addEventListener(SIGNED_OUT, signedOut)
     return () => window.removeEventListener(SIGNED_OUT, signedOut)
@@ -35,6 +35,7 @@ export default function App() {
       </div>
     )
   }
-  if (!session.data?.authenticated) return <Login discord={!!session.data?.discord} />
+  if (!session.data?.authenticated)
+    return <Login discord={!!session.data?.discord} password={session.data?.password !== false} />
   return <Shell session={session.data} />
 }

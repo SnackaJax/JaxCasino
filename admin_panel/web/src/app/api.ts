@@ -64,6 +64,10 @@ export type Session = {
   authenticated: boolean
   /** whether "Sign in with Discord" works (the bot knows its client secret) */
   discord?: boolean
+  /** whether the password works from where this page was opened (ADMIN_PANEL_PASSWORD_LOGIN) */
+  password?: boolean
+  /** opened through a proxy (Tailscale, say): away from home */
+  away?: boolean
 }
 
 /** The server's game switches (GET/POST /api/settings) */
@@ -270,3 +274,17 @@ export type PlayerInsights = {
   streaks: { game: string; best: number }[]
   people: People
 }
+
+/** One sign-in (or refused sign-in) from GET /api/signins, newest first. */
+export type SignIn = {
+  at: number
+  method: string
+  ok: boolean
+  who: string
+  note: string
+  ip: string
+  away: boolean
+  tailnet_user: string
+  browser: string
+}
+export type SignIns = { signins: SignIn[]; password_login: "on" | "local" | "off"; session_days: number }

@@ -333,6 +333,37 @@ function gameMixColumn(): ColumnDef<DataTableFeatures, PlayerRow> {
   }
 }
 
+/** A player on a phone: who, their balance and how they're doing, in one tap-sized card. */
+function PlayerCard({ row }: { row: PlayerRow }) {
+  const crux = row.crux - Date.now() / 1000
+  const t = row.last_active.getTime()
+  return (
+    <div className={cn("flex items-center gap-3", row.status === "left" && "text-muted-foreground")}>
+      <span className="relative shrink-0">
+        <PlayerAvatar name={row.name} avatar={row.avatar} size={36} />
+        <span className="ring-card absolute -right-0.5 -bottom-0.5 flex rounded-full ring-2">
+          <StatusDot status={row.status} />
+        </span>
+      </span>
+      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className="truncate text-sm font-medium">{row.name}</span>
+        <span className="text-muted-foreground truncate text-[11px]">
+          {t ? ago(t / 1000) : "never played"} · {credits(row.games)} games
+          {crux > 0 ? <span className="text-info"> · 🧊 {duration(crux)}</span> : null}
+        </span>
+      </span>
+      <span className="flex shrink-0 flex-col items-end gap-0.5">
+        <span className="tabular text-sm font-semibold">{compact(row.balance)}</span>
+        <span className={cn("tabular text-[11px]", row.net > 0 && "text-success", row.net < 0 && "text-error")}>
+          {signed(row.net)}
+        </span>
+      </span>
+    </div>
+  )
+}
+
+const renderPlayerCard = (row: { original: PlayerRow }) => <PlayerCard row={row.original} />
+
 const getRowClassName = (row: { original: PlayerRow }) =>
   row.original.status === "left" ? "text-muted-foreground" : ""
 
@@ -381,6 +412,7 @@ function PlayersTable({ guild }: { guild: Guild }) {
         getRowId={(row) => row.id}
         getRowClassName={getRowClassName}
         tableId="players"
+        renderCard={renderPlayerCard}
         commandSlot={<DataTableFilterCommand schema={filterSchema.definition} tableId="players" />}
         toolbarActions={<DataTableRefreshButton onClick={() => players.refetch()} />}
         footerSlot={<StatusLegend />}

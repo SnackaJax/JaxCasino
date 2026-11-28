@@ -4,6 +4,10 @@ type Drag = { a: number; b: number }
 const DOUBLE_CLICK_MS = 400
 const MIN_DRAG_PX = 5        // less than this is a click, not a drag
 
+/** Whether there's a mouse or trackpad to drag with. On a phone a drag scrolls the page, and a tap shows the values. */
+export const canDragZoom = typeof window !== "undefined" && !!window.matchMedia?.("(any-pointer: fine)").matches
+export const ZOOM_HINT = canDragZoom ? "Drag across the chart to zoom in." : "Tap the chart to see the values."
+
 /**
  * Drag across a time chart to zoom into a stretch of it. Put `ref` and `handlers` on a div wrapped tightly around
  * the chart. `start` and `end` are the times (ms) at the plot area's left and right edge, `left` and `right` the px
@@ -48,7 +52,7 @@ export function useDragZoom({
 
   const handlers = {
     onPointerDown: (e: React.PointerEvent<HTMLDivElement>) => {
-      if (e.button !== 0) return
+      if (e.button !== 0 || e.pointerType === "touch") return   // a finger scrolls; a tap shows the tooltip
       const x = timeAt(e.clientX)
       if (x === null) return
       e.currentTarget.setPointerCapture(e.pointerId)

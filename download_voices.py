@@ -1,6 +1,6 @@
 """Downloads the live blackjack dealer's voice into voices/ (they're too big to keep in git).
 
-    python download_voices.py           the Kokoro model and voices (about 350 MB, the default dealer voice)
+    python download_voices.py           the Kokoro model and voices (about 205 MB, the default dealer voice)
     python download_voices.py piper     also the smaller, faster, more robotic Piper voice (about 63 MB)
 
 Files that are already there with the right size are skipped.
@@ -12,7 +12,7 @@ from pathlib import Path
 VOICES = Path(__file__).resolve().parent / "voices"
 KOKORO = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/"
 PIPER = "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/"
-FILES = {"kokoro": [(KOKORO + "kokoro-v1.0.onnx", "kokoro-v1.0.onnx"), (KOKORO + "voices-v1.0.bin", "voices-v1.0.bin")],
+FILES = {"kokoro": [(KOKORO + "kokoro-v1.0.fp16.onnx", "kokoro-v1.0.fp16.onnx"), (KOKORO + "voices-v1.0.bin", "voices-v1.0.bin")],
          "piper": [(PIPER + "en_US-lessac-medium.onnx", "en_US-lessac-medium.onnx"),
                    (PIPER + "en_US-lessac-medium.onnx.json", "en_US-lessac-medium.onnx.json")]}
 

@@ -5,12 +5,12 @@ there by itself. Instead the page asks the server (POST /api/voice) to say a lin
 Nothing is sent to any outside service.
 
 Two engines, picked by the model file in DEALER_VOICE_MODEL (.env):
-  - Kokoro (the default, voices/kokoro-v1.0.onnx with voices-v1.0.bin next to it; package kokoro-onnx): the most
+  - Kokoro (the default, voices/kokoro-v1.0.fp16.onnx with voices-v1.0.bin next to it; package kokoro-onnx): the most
     natural voice, about half a second per short sentence. DEALER_VOICE_NAME picks the speaker (default af_heart).
   - Piper (any other .onnx, like voices/en_US-lessac-medium.onnx; package piper-tts): more robotic, but very fast.
 Without the package or the model file the server voice is off, and the pages fall back to the device's own voices.
 
-The model takes about 400 MB, so it's loaded only when someone opens a table with a dealer (wake()) or asks for a
+The model takes about 250 MB (the full-size kokoro-v1.0.onnx about 400 MB), so it's loaded only when someone opens a table with a dealer (wake()) or asks for a
 line that isn't ready yet, and let go again after IDLE_UNLOAD seconds without a new line. The lines already made stay
 ready, so the ones every round needs don't wait for the model.
 """
@@ -26,6 +26,7 @@ import threading
 import time
 import wave
 from collections import OrderedDict
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 log = logging.getLogger("jaxcasino.activity.voice")
@@ -35,6 +36,7 @@ CACHE_LINES = 400            # lines kept ready (the fixed ones, like "No more b
 RATE_WINDOW = 60             # seconds
 RATE_LINES = 60              # lines one player may ask for in that window (the pages ask one sentence at a time)
 KOKORO_STYLES = "voices-v1.0.bin"
+FP16, FP32 = "kokoro-v1.0.fp16.onnx", "kokoro-v1.0.onnx"   # sounds nearly the same, 250 MB of memory instead of 400
 IDLE_UNLOAD = 15 * 60        # seconds without a new line before the model is let go
 IDLE_CHECK = 60              # seconds between those checks
 VOICE_THREADS = 4            # CPU threads for one line (onnxruntime would take every core, each with its own memory)
@@ -43,6 +45,14 @@ COMMON_LINES = ["Place your bets, please.", "No more bets, thank you.", "Dealer 
                 *[f"Dealer has {n}." for n in range(17, 22)], "It's a push.", "No winners this round.",
                 "The house wins this round.", "Better luck next time!", "Hello!", "I will be your dealer.",
                 "That's 21 for the dealer, thanks for playing."]
+
+
+def _trim() -> None:
+    """Gives freed memory back to the system (Linux); elsewhere it's just reused later."""
+    try:
+        ctypes.CDLL("libc.so.6").malloc_trim(0)
+    except (OSError, AttributeError):
+        pass
 
 
 def _clean(text: str) -> str:
@@ -109,11 +119,16 @@ class DealerVoice:
         path = Path(model_path) if model_path else None
         if path is not None and not path.is_absolute():   # relative to the bot's folder, wherever it's started from
             path = Path(__file__).resolve().parent.parent / path
+        if path is not None and not path.is_file() and path.name == FP16:   # set up before fp16 was the default
+            if (full := path.with_name(FP32)).is_file():
+                path = full
         self.path = path
         self.speaker = speaker
         self.engine: _Piper | _Kokoro | None = None
         self.problem: str | None = None
         self.lock = threading.Lock()
+        # one thread of its own for all the voice work: every thread that makes lines keeps its own memory pool
+        self.thread = ThreadPoolExecutor(max_workers=1, thread_name_prefix="dealer-voice")
         self.cache: OrderedDict[str, bytes] = OrderedDict()
         self.making: dict[str, asyncio.Task] = {}   # lines being made now: everyone asking for one waits for the same
         self.asked: dict[int, list[float]] = {}
@@ -156,11 +171,14 @@ class DealerVoice:
                 log.exception("Dealer voice is off: couldn't load %s", self.path)
             return
         self.engine = engine
+        _trim()   # loading leaves about 50 MB of scratch memory behind
         log.info("Dealer voice ready (%s, %.1fs)", engine.name, time.monotonic() - t)
 
     def _wav(self, text: str) -> bytes:
         with self.lock:
-            return self.engine.wav(text)
+            wav = self.engine.wav(text)
+            _trim()   # each line frees 100+ MB of scratch memory that glibc would otherwise keep
+            return wav
 
     async def _warm(self) -> None:
         for text in COMMON_LINES:
@@ -185,7 +203,7 @@ class DealerVoice:
             return
         self.last_used = time.monotonic()
         if self.loading is None:
-            self.loading = asyncio.create_task(asyncio.to_thread(self._load))
+            self.loading = asyncio.create_task(self._in_thread(self._load))
             self.warming = asyncio.create_task(self._warm())
         if self.idle is None or self.idle.done():
             self.idle = asyncio.create_task(self._let_go_when_idle())
@@ -199,16 +217,16 @@ class DealerVoice:
                 continue
             self.engine = None   # nothing is making a line (self.making is empty), so nothing else holds it
             self.loading = self.warming = None
-            await asyncio.to_thread(self._free)
+            await self._in_thread(self._free)
             log.info("Dealer voice let go after %d minutes without a new line", IDLE_UNLOAD // 60)
+
+    async def _in_thread(self, fn, *args):
+        return await asyncio.get_running_loop().run_in_executor(self.thread, fn, *args)
 
     def _free(self) -> None:
         with self.lock:
             gc.collect()
-            try:   # give the freed memory back to the system (Linux); elsewhere it's just reused later
-                ctypes.CDLL("libc.so.6").malloc_trim(0)
-            except (OSError, AttributeError):
-                pass
+            _trim()
 
     def allowed(self, user_id: int) -> bool:
         now = time.monotonic()
@@ -238,7 +256,7 @@ class DealerVoice:
             return None
         task = self.making.get(text)
         if task is None:
-            task = self.making[text] = asyncio.create_task(asyncio.to_thread(self._wav, text))
+            task = self.making[text] = asyncio.create_task(self._in_thread(self._wav, text))
             task.add_done_callback(lambda t: self._made(text, t))
         try:
             return await asyncio.shield(task)   # a page that goes away doesn't stop the line for the others

@@ -110,10 +110,10 @@ ACTIVITY_ENABLED = os.getenv("ACTIVITY_ENABLED", "1").strip().lower() not in ("0
 ACTIVITY_HOST = os.getenv("ACTIVITY_HOST", "127.0.0.1").strip() or "127.0.0.1"
 ACTIVITY_PORT = _int("ACTIVITY_PORT", 8765)
 DISCORD_CLIENT_SECRET = os.getenv("DISCORD_CLIENT_SECRET", "").strip()
-# The live blackjack dealer's voice, made on this machine from this voice model: Kokoro (kokoro-v1.0.onnx with
-# voices-v1.0.bin next to it, pip install kokoro-onnx) or any Piper model (pip install piper-tts). Empty turns the
+# The live blackjack dealer's voice, made on this machine from this voice model: Kokoro (kokoro-v1.0.fp16.onnx, or the
+# bigger kokoro-v1.0.onnx, with voices-v1.0.bin next to it, pip install kokoro-onnx) or any Piper model (pip install piper-tts). Empty turns the
 # server voice off (devices with their own speech voices still speak; Android's Discord app doesn't).
-DEALER_VOICE_MODEL = os.getenv("DEALER_VOICE_MODEL", "voices/kokoro-v1.0.onnx").strip()
+DEALER_VOICE_MODEL = os.getenv("DEALER_VOICE_MODEL", "voices/kokoro-v1.0.fp16.onnx").strip()
 # Which Kokoro speaker (af_heart, af_bella, bf_emma, ...). Piper models have one voice and ignore this.
 DEALER_VOICE_NAME = os.getenv("DEALER_VOICE_NAME", "af_heart").strip()
 # Average share of bets Spin Frenzy pays back on the number spots 1, 2, 5 and 10 (0.97 = 97%)

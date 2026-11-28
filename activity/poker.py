@@ -813,6 +813,7 @@ class PokerHub:
 
     def welcome(self, user_id: int) -> dict:
         s = self.server.settings
+        self.server.voice.wake()   # the announcer's voice loads while they pick a table
         return {"type": "welcome", "you": str(user_id), "min_buy_in": max(20, s.min_bet), "buy_ins": buy_ins(s),
                 "turn_time": TURN_TIME,
                 "max_tables": MAX_TABLES, "rake": config.POKER_RAKE, "server_voice": self.server.voice.available}

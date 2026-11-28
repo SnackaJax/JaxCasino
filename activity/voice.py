@@ -9,10 +9,17 @@ Two engines, picked by the model file in DEALER_VOICE_MODEL (.env):
     natural voice, about half a second per short sentence. DEALER_VOICE_NAME picks the speaker (default af_heart).
   - Piper (any other .onnx, like voices/en_US-lessac-medium.onnx; package piper-tts): more robotic, but very fast.
 Without the package or the model file the server voice is off, and the pages fall back to the device's own voices.
+
+The model takes about 400 MB, so it's loaded only when someone opens a table with a dealer (wake()) or asks for a
+line that isn't ready yet, and let go again after IDLE_UNLOAD seconds without a new line. The lines already made stay
+ready, so the ones every round needs don't wait for the model.
 """
 from __future__ import annotations
 
 import asyncio
+import ctypes
+import gc
+import importlib.util
 import io
 import logging
 import threading
@@ -28,6 +35,9 @@ CACHE_LINES = 400            # lines kept ready (the fixed ones, like "No more b
 RATE_WINDOW = 60             # seconds
 RATE_LINES = 60              # lines one player may ask for in that window (the pages ask one sentence at a time)
 KOKORO_STYLES = "voices-v1.0.bin"
+IDLE_UNLOAD = 15 * 60        # seconds without a new line before the model is let go
+IDLE_CHECK = 60              # seconds between those checks
+VOICE_THREADS = 4            # CPU threads for one line (onnxruntime would take every core, each with its own memory)
 # made right after the model loads, so the lines every round needs are there at once
 COMMON_LINES = ["Place your bets, please.", "No more bets, thank you.", "Dealer busts!", "Dealer has blackjack.",
                 *[f"Dealer has {n}." for n in range(17, 22)], "It's a push.", "No winners this round.",
@@ -62,13 +72,20 @@ class _Kokoro:
             raise RuntimeError(f"{styles} not found (it goes next to the model, see the README)")
         try:
             import numpy as np
+            import onnxruntime as ort
             from kokoro_onnx import Kokoro
         except ImportError:
             raise RuntimeError("kokoro-onnx is not installed (pip install kokoro-onnx)") from None
         self.np = np
         # its phonemizer warns about every line with numbers or punctuation it splits differently; harmless
         logging.getLogger("phonemizer").setLevel(logging.ERROR)
-        self.kokoro = Kokoro(str(path), str(styles))
+        # onnxruntime's own memory pool keeps the biggest line's working memory forever (100+ MB): off
+        opts = ort.SessionOptions()
+        opts.enable_cpu_mem_arena = False
+        opts.intra_op_num_threads = VOICE_THREADS
+        opts.inter_op_num_threads = 1
+        session = ort.InferenceSession(str(path), opts, providers=["CPUExecutionProvider"])
+        self.kokoro = Kokoro.from_session(session, str(styles))
         self.speaker = speaker or "af_heart"
         if self.speaker not in self.kokoro.get_voices():
             raise RuntimeError(f"there is no Kokoro voice {self.speaker!r} (DEALER_VOICE_NAME)")
@@ -102,26 +119,34 @@ class DealerVoice:
         self.asked: dict[int, list[float]] = {}
         self.loading: asyncio.Task | None = None
         self.warming: asyncio.Task | None = None
+        self.idle: asyncio.Task | None = None
+        self.last_used = 0.0
+        self.kind = _Kokoro if path is not None and path.name.lower().startswith("kokoro") else _Piper
 
     @property
     def available(self) -> bool:
-        """Whether the server can speak (the model loads in the background at start)."""
+        """Whether the server can speak (the model itself is loaded when it's first needed)."""
         return self.problem is None and self.path is not None
 
-    def _load(self) -> None:
-        if self.engine is not None or self.problem:
-            return
+    def _check(self) -> None:
+        """The quick checks, at start, so the pages know straight away whether the server can speak."""
         if self.path is None:
             self.problem = "DEALER_VOICE_MODEL is empty"
-            return
-        if not self.path.is_file():
+        elif not self.path.is_file():
             self.problem = f"voice model {self.path} not found"
             log.warning("Dealer voice is off: %s (see the README to download it)", self.problem)
+        else:
+            module, package = ("kokoro_onnx", "kokoro-onnx") if self.kind is _Kokoro else ("piper", "piper-tts")
+            if importlib.util.find_spec(module) is None:
+                self.problem = f"{package} is not installed (pip install {package})"
+                log.warning("Dealer voice is off: %s", self.problem)
+
+    def _load(self) -> None:
+        if self.engine is not None or not self.available:
             return
-        kind = _Kokoro if self.path.name.lower().startswith("kokoro") else _Piper
         t = time.monotonic()
         try:
-            engine = kind(self.path, self.speaker)
+            engine = self.kind(self.path, self.speaker)
             engine.wav("Ready.")   # the first line is slow; get it over with now
         except Exception as e:   # a missing package or broken model file must not take the Activity down
             self.problem = str(e) if isinstance(e, RuntimeError) else f"couldn't load {self.path}: {e}"
@@ -146,11 +171,44 @@ class DealerVoice:
                 return
 
     async def start(self) -> None:
-        """Loads the model in the background, so the first line doesn't keep anyone waiting, then makes the lines
-        every round needs."""
-        if self.path is not None and self.loading is None:
+        """Checks that the server can speak; the model is loaded later, when it's needed (wake())."""
+        self._check()
+
+    def wake(self) -> None:
+        """Someone opened a game with a dealer: loads the model in the background if it isn't loaded, so the first
+        line doesn't keep them waiting, then makes the lines every round needs."""
+        if not self.available:
+            return
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:   # not in the bot's event loop (a test calling welcome())
+            return
+        self.last_used = time.monotonic()
+        if self.loading is None:
             self.loading = asyncio.create_task(asyncio.to_thread(self._load))
             self.warming = asyncio.create_task(self._warm())
+        if self.idle is None or self.idle.done():
+            self.idle = asyncio.create_task(self._let_go_when_idle())
+
+    async def _let_go_when_idle(self) -> None:
+        """Lets the model go after IDLE_UNLOAD seconds without a new line; the next wake() loads it again."""
+        while self.available:
+            await asyncio.sleep(IDLE_CHECK)
+            if (self.engine is None or self.making or self.loading is None or not self.loading.done()
+                    or time.monotonic() - self.last_used < IDLE_UNLOAD):
+                continue
+            self.engine = None   # nothing is making a line (self.making is empty), so nothing else holds it
+            self.loading = self.warming = None
+            await asyncio.to_thread(self._free)
+            log.info("Dealer voice let go after %d minutes without a new line", IDLE_UNLOAD // 60)
+
+    def _free(self) -> None:
+        with self.lock:
+            gc.collect()
+            try:   # give the freed memory back to the system (Linux); elsewhere it's just reused later
+                ctypes.CDLL("libc.so.6").malloc_trim(0)
+            except (OSError, AttributeError):
+                pass
 
     def allowed(self, user_id: int) -> bool:
         now = time.monotonic()
@@ -166,16 +224,18 @@ class DealerVoice:
 
     async def say(self, text: str) -> bytes | None:
         """The line as a WAV file, or None when the server can't speak."""
-        if self.loading is None:
-            await self.start()
+        if not self.available:
+            return None
+        text = _clean(text)
+        self.last_used = time.monotonic()
+        wav = self.cache.get(text)
+        if wav is not None:   # ready, with or without the model loaded
+            self.cache.move_to_end(text)
+            return wav
+        self.wake()
         await asyncio.shield(self.loading)
         if self.engine is None:
             return None
-        text = _clean(text)
-        wav = self.cache.get(text)
-        if wav is not None:
-            self.cache.move_to_end(text)
-            return wav
         task = self.making.get(text)
         if task is None:
             task = self.making[text] = asyncio.create_task(asyncio.to_thread(self._wav, text))

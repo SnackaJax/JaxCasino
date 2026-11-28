@@ -1206,6 +1206,7 @@ class BlackjackHub:
 
     def welcome(self, user_id: int) -> dict:
         s = self.server.settings
+        self.server.voice.wake()   # the dealer's voice loads while they pick a table
         return {"type": "welcome", "you": str(user_id), "min_bet": s.min_bet, "max_bet": s.max_bet,
                 "min_bets": min_bets(s),
                 "bet_time": BET_TIME, "turn_time": TURN_TIME, "max_tables": MAX_TABLES, "max_seats": MAX_SEATS,
